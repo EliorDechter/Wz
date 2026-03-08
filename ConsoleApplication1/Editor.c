@@ -13,21 +13,21 @@ WzStr wzrd_str_from_str128(str128* str)
 void editor_seperator_horizontal(WzWidget parent)
 {
 	WzWidget w = wz_widget(parent);
-	wz_widget_set_max_constraint_h(w, 2);
+	wz_widget_set_max_h(w, 2);
 	wz_widget_set_border(w, WZ_BORDER_TYPE_BOTTOM_LINE);
 }
 
 void editor_seperator_vertical(WzWidget parent)
 {
 	WzWidget w = wz_widget(parent);
-	wz_widget_set_max_constraint_w(w, 2);
+	wz_widget_set_max_w(w, 2);
 }
 
 WzWidget editor_horizontal_panel_bordered(wzrd_v2 size, WzWidget parent)
 {
 	WzWidget p = wz_hbox(parent);
 
-	//wz_widget_set_tight_constraints(p, size.x, size.y);
+	//wz_widget_set_size(p, size.x, size.y);
 
 	return p;
 }
@@ -195,7 +195,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 		// Game panel
 		WzWidget target_panel = editor_hpanel(panel);
 		//wz_widget_set_expanded(target_panel);
-		wz_widget_set_tight_constraints(target_panel, GAME_WIDTH, GAME_HEIGHT);
+		wz_widget_set_size(target_panel, GAME_WIDTH, GAME_HEIGHT);
 		wz_widget_get(target_panel)->disable_input = true;
 		*target_panel_out = target_panel;
 
@@ -327,12 +327,14 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 
 				if (wz_widget_is_active(b))
 				{
+#if 0 
 					wz_widget_data_set_tight_constraints(&wz->persistent_widgets[i],
 						widget_data->constraint_max_w - wz->mouse_delta.x,
 						widget_data->constraint_max_h - wz->mouse_delta.y);
 					wz_widget_data_set_pos(&wz->persistent_widgets[i],
 						widget_data->x + wz->mouse_delta.x,
 						widget_data->y + wz->mouse_delta.y);
+#endif
 				}
 			}
 
@@ -354,8 +356,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 				WzWidgetData* draw_panel_data = wz_widget_get(draw_panel);
 				bool b;
 				WzWidget widg = wz_command_button(wz_str_create("wow"), &b, draw_panel);
-				wz_widget_set_tight_constraints(widg, w, h);
-				wz_widget_set_type(widg, WZ_WIDGET_TYPE_COMMAND_BUTTON);
+				wz_widget_set_size(widg, w, h);
 				wz_widget_set_x(widg, g_editor.drawing_widget_x - draw_panel_data->actual_x);
 				wz_widget_set_y(widg, g_editor.drawing_widget_y - draw_panel_data->actual_y);
 

@@ -56,9 +56,6 @@
 
 #define MAX_SOURCE_SIZE 128
 
-#define WZ_WIDGET_TYPE_NONE 0
-#define WZ_WIDGET_TYPE_COMMAND_BUTTON 1
-
 #define MAX_NUM_CACHED_BOXES 128
 
 #define MAX_NUM_PERSISTENT_WIDGETS 1024
@@ -249,7 +246,7 @@ typedef struct wzrd_texture {
 typedef enum ItemType {
 	ItemType_None,
 	WZ_WIDGET_ITEM_TYPE_STRING,
-	ItemType_Rect,
+	WZ_ITEM_TYPE_RECT,
 	ItemType_RectAbsolute,
 	ItemType_Texture,
 	ItemType_DropdownIcon,
@@ -306,9 +303,17 @@ typedef struct wzrd_widget_id {
 	WzStr val;
 } wzrd_widget_id;
 
+enum
+{
+	WZ_WIDGET_TYPE_COMMAND_NONE,
+	WZ_WIDGET_TYPE_COMMAND_BUTTON,
+	WZ_WIDGET_TYPE_INPUT_BOX,
+};
+
 typedef struct wzrd_handle
 {
 	unsigned handle;
+	unsigned type;
 } WzWidget;
 
 typedef struct Crate {
@@ -448,6 +453,9 @@ typedef struct
 
 	unsigned text_alignment;
 	bool disable;
+
+	// State
+	bool* released;
 } WzWidgetData;
 
 typedef struct WzScene
@@ -652,7 +660,6 @@ typedef struct WzGui
 	unsigned scenes_count;
 
 	// NEW 14.02 from stb
-	WzInputState input_state;
 	WzWidget active_input;
 
 #define MAX_NUM_EVENTS 128
@@ -660,9 +667,9 @@ typedef struct WzGui
 	unsigned events_count;
 
 	char* pasted_text;
+	char copied_text[128];
 
 	unsigned long (*get_ticks)(void);
-
 
 } WzGui;
 
@@ -886,7 +893,7 @@ WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active, const c
 WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, bool* active, const char* file, unsigned int line);
 void wzrd_label_list_sorted_raw(WzStr* item_names, unsigned int count, int* items, unsigned int width, unsigned int height, unsigned int color, unsigned int* selected, bool* is_selected, WzWidget parent, const char* file, unsigned int line);
 void wzrd_label_list_raw(WzStr* item_names, unsigned int count, unsigned int width, unsigned int height, unsigned int color, WzWidget* handles, unsigned int* selected, bool* is_selected, WzWidget parent, const char* file, unsigned int line);
-WzWidget wz_input_box_raw(WzWidget parent, const char* file, unsigned int line);
+WzWidget wz_input_box_raw(WzWidget parent, WzInputState *state, const char* file, unsigned int line);
 WzWidget wzrd_handle_button_raw(bool* active, WzRect rect, unsigned int color, WzStr name, WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_label_raw(WzWidget parent, WzStr str, const char* file, unsigned int line);
 WzWidget wzrd_vbox_border_raw(wzrd_v2 size, WzWidget parent, const char* file, unsigned int line);
@@ -955,8 +962,8 @@ WzWidget wz_scene(WzScene scene, WzWidget parent, WzTexture texture, int x, int 
 // Missing checkbox, radiobox, combox
 #define wz_label(parent, str) wz_label_raw(parent, str, __FILE__, __LINE__)
 #define wz_command_button(str, b, parent) wz_command_button_raw(str, b, parent, __FILE__, __LINE__)
-#define wz_input_box(parent) \
-	wz_input_box_raw(parent, __FILE__, __LINE__)
+#define wz_input_box(parent, state) \
+	wz_input_box_raw(parent, state, __FILE__, __LINE__)
 	
 float wz_get_font_width(WzInputState *, int, int);
 

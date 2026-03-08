@@ -170,6 +170,19 @@
       <Project>{29ffb079-5f79-4158-a9ed-1e974e90889c}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\ConsoleApplication1\WzLayout.ispc">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)WzLayout.obj</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(OutDir)WzLayout.obj</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)WzLayout.obj</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)WzLayout.obj</Outputs>
+    </CustomBuild>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

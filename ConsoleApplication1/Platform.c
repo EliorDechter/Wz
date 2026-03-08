@@ -586,7 +586,7 @@ void test_gui(WzGui* wz)
 	WzWidget window = wz_vbox(window0);
 	WzWidget menu = wz_vbox(window);
 	wz_widget_set_border(menu, WZ_BORDER_TYPE_DEFAULT);
-	wz_widget_set_tight_constraints(menu, 200, 800);
+	wz_widget_set_size(menu, 200, 800);
 	wz_widget_set_color(menu, 0xffffffff);
 
 	bool expand = false, selected = false;

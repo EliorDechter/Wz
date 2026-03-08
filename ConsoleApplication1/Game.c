@@ -802,8 +802,8 @@ void game_entity_gui_do(unsigned int scale_w, unsigned int scale_h, WzGui* wz, W
 		{
 #if		1
 			handle = wz_widget(background_box->handle);
-			wz_widget_set_max_constraint_w(handle, entity->rect.w);
-			wz_widget_set_max_constraint_h(handle, entity->rect.h);
+			wz_widget_set_max_w(handle, entity->rect.w);
+			wz_widget_set_max_h(handle, entity->rect.h);
 			wz_widget_set_x(handle, entity->rect.x);
 			wz_widget_set_y(handle, entity->rect.y);
 			wz_widget_set_color(handle, 0);
