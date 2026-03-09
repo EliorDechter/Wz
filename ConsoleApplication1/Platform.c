@@ -454,7 +454,7 @@ SDL_AppResult handle_events(SDL_Event* event) {
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 {
 	(void)appstate;
-
+	
 	SDL_AppResult result = handle_events(event);
 
 	return result;

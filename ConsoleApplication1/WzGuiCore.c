@@ -325,6 +325,20 @@ int wzrd_box_get_current_index() {
 	return result;
 }
 
+void wz_widget_add_text_new(WzWidget parent, WzStr str, float x, float y)
+{
+	WzWidgetItem item;
+
+	item.type = WZ_WIDGET_ITEM_TYPE_STRING;
+	item.val.str = str;
+	//item.color = wz_widget_get(parent)->font_color;
+	item.margin_bottom = item.margin_top = item.margin_right = item.margin_left = 0;
+	item.x = x;
+	item.y = y;
+	wz_widget_add_item(parent, item);
+}
+
+
 void wz_widget_add_text(WzWidget parent, WzStr str)
 {
 	WzWidgetItem item;
@@ -792,8 +806,8 @@ void wz_set_string_size_callback(void (*get_string_size)(char*, unsigned, unsign
 
 WzWidget wz_begin(
 	unsigned window_w, unsigned  window_h,
-	float mouse_x, float mouse_y,
-	WzState left_mouse_state,
+	//float mouse_x, float mouse_y,
+	//WzState left_mouse_state,
 	WzEvent* events,
 	unsigned events_count,
 	bool enable_input)
@@ -810,6 +824,37 @@ WzWidget wz_begin(
 
 	memset(wz->keyboard.keys, 0, sizeof(WzState) * 512);
 
+
+	// Mouse Input
+	if (1)
+	{
+		if (wz->mouse_left == WZ_ACTIVATING)
+		{
+			wz->mouse_left = WZ_ACTIVE;
+		}
+		else if (wz->mouse_left == WZ_DEACTIVATING)
+		{
+			wz->mouse_left = WZ_INACTIVE;
+		}
+
+#if 0
+		//if (mflags & SDL_BUTTON_LMASK)
+		{
+			if (wz->mouse_left == WZ_INACTIVE)
+			{
+				wz->mouse_left = WZ_ACTIVATING;
+			}
+		}
+		//else
+		{
+			if (wz->mouse_left == WZ_ACTIVE)
+			{
+				wz->mouse_left = WZ_DEACTIVATING;
+			}
+		}
+#endif
+	}
+
 	for (unsigned i = 0; i < events_count; ++i)
 	{
 		if (events[i].type == WZ_EVENT_TYPE_KEYBOARD)
@@ -820,10 +865,25 @@ WzWidget wz_begin(
 				wz->keyboard.keys[key.key] = WZ_ACTIVATING;
 			}
 		}
+		else if (events[i].type == WZ_EVENT_TYPE_MOUSE)
+		{
+			if (events[i].button.button == 1)
+			{
+				if (events[i].button.down)
+				{
+					wz->mouse_left = WZ_ACTIVATING;
+				}
+				else
+				{
+					wz->mouse_left = WZ_DEACTIVATING;
+				}
+			}
+
+		}
 	}
 
-	wz->mouse_left = left_mouse_state;
-	wz->mouse_pos = (wzrd_v2f){ mouse_x, mouse_y };
+	//wz->mouse_left = left_mouse_state;
+	//wz->mouse_pos = (wzrd_v2f){ mouse_x, mouse_y };
 	wz->mouse_delta.x = wz->mouse_pos.x - wz->previous_mouse_pos.x;
 	wz->mouse_delta.y = wz->mouse_pos.y - wz->previous_mouse_pos.y;
 
@@ -833,8 +893,6 @@ WzWidget wz_begin(
 	wz->current_crate_index = 0;
 
 	WZRD_UNUSED(wz);
-
-	wz->input_box_timer += 16.7f;
 
 	// Empty box
 	//gui->widgets_count = 0;
@@ -1127,7 +1185,6 @@ void wz_input(int* indices, int count)
 
 	if (wz->mouse_left == WZ_DEACTIVATING)
 	{
-		//canvas->released_item = canvas->dragged_item;
 		wz->dragged_box = (WzWidgetData){ 0 };
 		wz->dragged_item = (WzWidget){ 0 };
 
@@ -1321,6 +1378,7 @@ void wz_draw(WzWidget* boxes_indices)
 	WzWidget current_clip_widget;
 	WzWidgetItem item;
 
+	// TODO: Remove temp buffer
 #define TEMP_BUFFER_SIZE 128
 	WzDrawCommand temp_buffer[TEMP_BUFFER_SIZE] = { 0 };
 	int temp_buffer_count = 0;
@@ -1442,7 +1500,7 @@ void wz_draw(WzWidget* boxes_indices)
 					wz_widget_add_rect_new(widget, top1.x + top1.w, top1.y, 1, 1, 0X000000FF | (unsigned)(0.5 * WZ_BLACK + 0.5 * WZ_LIGHTGRAY));
 					wz_widget_add_rect_new(widget, top1.x, top1.y, 1, 1, EGUI_WHITE2);
 				}
-				else if (widget_data->border_type == WZ_BORDER_TYPE_CLICKED) {
+				else if (widget_data->border_type == WZ_BORDER_TYPE_CLICKED || widget_data->border_type == WZ_BORDER_TYPE_TEXT_BOX) {
 					// Draw top and left lines
 					wz_widget_add_rect_new(widget, top0.x, top0.y, top0.w, top0.h, WZ_BLACK);
 					wz_widget_add_rect_new(widget, left0.x, left0.y, left0.w, left0.h, WZ_BLACK);
@@ -1455,7 +1513,8 @@ void wz_draw(WzWidget* boxes_indices)
 					wz_widget_add_rect_new(widget, bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_LIGHTESTGRAY);
 					wz_widget_add_rect_new(widget, right1.x, right1.y, right1.w, right1.h, EGUI_LIGHTESTGRAY);
 				}
-				else if (widget_data->border_type == BorderType_InputBox) {
+#if 0
+				else if (widget_data->border_type == WZ_BORDER_TYPE_TEXT_BOX) {
 					// Draw top and left lines
 					wz_widget_add_rect_new(widget, top0.x, top0.y, top0.w, top0.h, EGUI_GRAY);
 					wz_widget_add_rect_new(widget, left0.x, left0.y, left0.w, left0.h, EGUI_GRAY);
@@ -1468,6 +1527,7 @@ void wz_draw(WzWidget* boxes_indices)
 					wz_widget_add_rect_new(widget, bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_LIGHTESTGRAY);
 					wz_widget_add_rect_new(widget, right1.x, right1.y, right1.w, right1.h, EGUI_LIGHTESTGRAY);
 				}
+#endif
 				else if (widget_data->border_type == WZ_BORDER_TYPE_BLACK) {
 #if 1
 					// Draw top and left lines
@@ -1497,6 +1557,57 @@ void wz_draw(WzWidget* boxes_indices)
 		// Draw content
 		temp_buffer_count = 0;
 
+		// Draw clip area
+		if (1) {
+			if (wz_handle_is_valid(widget.clip_widget))
+			{
+				if (!wz_widget_is_equal(current_clip_widget, widget.clip_widget))
+				{
+					WzWidgetData* clip_box = wz_widget_get(widget.clip_widget);
+
+					WzRect clip_rect;
+					clip_rect.x = clip_box->actual_x + clip_box->pad_left;
+					clip_rect.y = clip_box->actual_y + clip_box->pad_top;
+					clip_rect.w = clip_box->actual_w - clip_box->pad_left - clip_box->pad_right;
+					clip_rect.h = clip_box->actual_h - clip_box->pad_top - clip_box->pad_bottom;
+
+					if (!clip_rect.w ||
+						!clip_rect.h ||
+						!(clip_rect.w > (widget.margin_left + widget.margin_right)) ||
+						!(clip_rect.h > (widget.margin_top + widget.margin_bottom)))
+					{
+						//printf("clip space too small for widget (%s %u)\n", widget.file, widget.line);
+						printf("erorr!\n");
+						continue;
+					}
+
+					// Add clip command to temp buffer
+					wz_assert(temp_buffer_count < TEMP_BUFFER_SIZE - 1);
+					temp_buffer[temp_buffer_count++] = (WzDrawCommand){
+						.type = DrawCommandType_Clip,
+						.x = clip_rect.x,
+						.y = clip_rect.y,
+						.w = clip_rect.w,
+						.h = clip_rect.h,
+						.color = WZ_BLUE
+					};
+				}
+			}
+			else
+			{
+				if (wz_handle_is_valid(current_clip_widget))
+				{
+					// Add stop clip command to temp buffer
+					wz_assert(temp_buffer_count < TEMP_BUFFER_SIZE - 1);
+					temp_buffer[temp_buffer_count++] = (WzDrawCommand){
+						.type = DrawCommandType_StopClip,
+					};
+				}
+			}
+
+			current_clip_widget = widget.clip_widget;
+		}
+
 		for (int j = 0; j < widget.items_count; ++j)
 		{
 			item = widget.items[j];
@@ -1516,7 +1627,7 @@ void wz_draw(WzWidget* boxes_indices)
 
 			if (item.center_w)
 			{
-				item_dest_rect.x = widget.actual_x + (widget.actual_w  - item.w - widget.pad_left - widget.pad_right) / 2;
+				item_dest_rect.x = widget.actual_x + (widget.actual_w - item.w - widget.pad_left - widget.pad_right) / 2;
 			}
 			if (item.center_h)
 			{
@@ -1534,8 +1645,8 @@ void wz_draw(WzWidget* boxes_indices)
 
 				if (widget.text_alignment == WZ_TEXT_ALIGNMENT_LEFT)
 				{
-					item_dest_rect.x = widget.actual_x + widget.pad_left;
-					item_dest_rect.y = widget.actual_y + widget.pad_right;
+					item_dest_rect.x = widget.actual_x + widget.pad_left + item.x;
+					item_dest_rect.y = widget.actual_y + widget.pad_right + item.y;
 				}
 				else if (widget.text_alignment == WZ_TEXT_ALIGNMENT_CENTER)
 				{
@@ -1732,98 +1843,44 @@ void wz_draw(WzWidget* boxes_indices)
 			wz_assert(temp_buffer[temp_buffer_count - 1].h >= 0);
 		}
 
-		// Draw clip area
+		
+
+		// Apply transformations to commands in temp buffer
 		{
-			if (wz_handle_is_valid(widget.clip_widget))
+			WzWidgetData* current_widget = &widget;
+
+			// Apply transformations to each command in the temp buffer
+			for (int cmd_idx = 0; cmd_idx < temp_buffer_count; ++cmd_idx)
 			{
-				if (!wz_widget_is_equal(current_clip_widget, widget.clip_widget))
-				{
-					WzWidgetData* clip_box = wz_widget_get(widget.clip_widget);
+				WzDrawCommand* cmd = &temp_buffer[cmd_idx];
 
-					WzRect clip_rect;
-					clip_rect.x = clip_box->actual_x;
-					clip_rect.y = clip_box->actual_y;
-					clip_rect.w = clip_box->actual_w;
-					clip_rect.h = clip_box->actual_h;
+				// Scale
+				cmd->w *= current_widget->world_scale[0];
+				cmd->h *= current_widget->world_scale[1];
 
-					if (!clip_rect.w ||
-						!clip_rect.h ||
-						!(clip_rect.w > (widget.margin_left + widget.margin_right)) ||
-						!(clip_rect.h > (widget.margin_top + widget.margin_bottom)))
-					{
-						//printf("clip space too small for widget (%s %u)\n", widget.file, widget.line);
-						printf("erorr!\n");
-						continue;
-					}
+				// Rotate position
+				float x = cmd->x;
+				float y = cmd->y;
+				cmd->x = x * cos(current_widget->world_rotation) -
+					y * sin(current_widget->world_rotation);
+				cmd->y = x * sin(current_widget->world_rotation) +
+					y * cos(current_widget->world_rotation);
 
-					clip_rect.x = clip_rect.x + widget.margin_left;
-					clip_rect.w = clip_rect.w - (widget.margin_left + widget.margin_right);
-					clip_rect.y = clip_rect.y + widget.margin_top;
-					clip_rect.h = clip_rect.h - (widget.margin_top + widget.margin_bottom);
-
-					// Add clip command to temp buffer
-					wz_assert(temp_buffer_count < TEMP_BUFFER_SIZE - 1);
-					temp_buffer[temp_buffer_count++] = (WzDrawCommand){
-						.type = DrawCommandType_Clip,
-						.x = clip_rect.x,
-						.y = clip_rect.y,
-						.w = clip_rect.w,
-						.h = clip_rect.h,
-						.color = WZ_BLUE
-					};
-				}
-			}
-			else
-			{
-				if (wz_handle_is_valid(current_clip_widget))
-				{
-					// Add stop clip command to temp buffer
-					wz_assert(temp_buffer_count < TEMP_BUFFER_SIZE - 1);
-					temp_buffer[temp_buffer_count++] = (WzDrawCommand){
-						.type = DrawCommandType_StopClip,
-					};
-				}
-			}
-
-			current_clip_widget = widget.clip_widget;
-
-			// Apply transformations to commands in temp buffer
-			{
-				WzWidgetData* current_widget = &widget;
-
-				// Apply transformations to each command in the temp buffer
-				for (int cmd_idx = 0; cmd_idx < temp_buffer_count; ++cmd_idx)
-				{
-					WzDrawCommand* cmd = &temp_buffer[cmd_idx];
-
-					// Scale
-					cmd->w *= current_widget->world_scale[0];
-					cmd->h *= current_widget->world_scale[1];
-
-					// Rotate position
-					float x = cmd->x;
-					float y = cmd->y;
-					cmd->x = x * cos(current_widget->world_rotation) -
-						y * sin(current_widget->world_rotation);
-					cmd->y = x * sin(current_widget->world_rotation) +
-						y * cos(current_widget->world_rotation);
-
-					// Translate
-					cmd->x += current_widget->world_pos[0];
-					cmd->y += current_widget->world_pos[1];
+				// Translate
+				cmd->x += current_widget->world_pos[0];
+				cmd->y += current_widget->world_pos[1];
 
 #if 1
-					// Apply camera offset (for all widgets)
-					cmd->x -= wz->camera_x;
-					cmd->y -= wz->camera_y;
+				// Apply camera offset (for all widgets)
+				cmd->x -= wz->camera_x;
+				cmd->y -= wz->camera_y;
 
-					// Apply zoom (for all widgets)
-					cmd->x *= (1 + wz->zoom_factor);
-					cmd->y *= (1 + wz->zoom_factor);
-					cmd->w *= (1 + wz->zoom_factor);
-					cmd->h *= (1 + wz->zoom_factor);
+				// Apply zoom (for all widgets)
+				cmd->x *= (1 + wz->zoom_factor);
+				cmd->y *= (1 + wz->zoom_factor);
+				cmd->w *= (1 + wz->zoom_factor);
+				cmd->h *= (1 + wz->zoom_factor);
 #endif
-				}
 			}
 		}
 
@@ -2253,67 +2310,115 @@ WzStr wz_str_create_slice(const char* str, unsigned begin, unsigned end)
 }
 
 
-void wz_input_box_run(WzWidget widget, WzInputState* input_state)
+void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 {
+	WzWidgetData* wdata = &wz->widgets[widget.handle];
+	unsigned      flags = wdata->input_flags;
+	bool moving_cursor = false;
+
 	bool focused = wz_widget_is_equal(wz->active_input, widget);
 
-	static bool textedit_initialized = false;
-	static float click_timer = 0.0f;
-	static int click_count = 0;
-	static int anchor_word_start = 0;
-	static int anchor_word_end = 0;
-	click_timer += 16.7f;
+	static unsigned   click_count = 0;
+	static int   anchor_word_start = 0;
+	static int   anchor_word_end = 0;
+	
+	float pad_x = (float)wz->widgets[widget.handle].pad_left;
+	float pad_y = (float)wz->widgets[widget.handle].pad_top;
 
-	float x = wz->widget_rects[widget.handle].x + wz->widgets[widget.handle].pad_left;
-	float y = wz->widget_rects[widget.handle].y + wz->widgets[widget.handle].pad_top;
+	// Horizontal scroll
+	float x = 0, y = 0;
+	{
+		float w, h;
+		wz->get_string_size(input_state->buffer, 0, input_state->textedit_state.cursor, &w, &h);
+		float box_w = wz->widget_rects[widget.handle].w - pad_x * 2.0f;
+		float delta = w - box_w;
+		if (delta > 0)
+		{
+			x -= delta;
+		}
+	}
 
-	float rel_x = wz->mouse_pos.x - x;
-	float rel_y = wz->mouse_pos.y - y;
+	float origin_x = wz->widget_rects[widget.handle].x + x + pad_x;
+	float origin_y = wz->widget_rects[widget.handle].y + y + pad_y;
+
+	// Mouse coordinates relative to text area, accounting for scroll
+	float rel_x = wz->mouse_pos.x - origin_x;
+	float rel_y = wz->mouse_pos.y - origin_y;
+	float text_x = rel_x; // scroll-adjusted x for STB
 
 	if (wz_widget_is_activating(widget))
 	{
-		if (!textedit_initialized)
+		if (!input_state->textedit_state.initialized)
 		{
 			stb_textedit_initialize_state(&input_state->textedit_state, 1);
-			textedit_initialized = true;
 		}
 
-		if (click_timer < 400.0f)
-			click_count++;
-		else
-			click_count = 1;
-		click_timer = 0.0f;
+		float delta_time = wz->ticks_in_ns() - input_state->time_since_click;
 
+		if (delta_time < DOUBLE_CLICK_TIME_NS)
+		{
+			click_count++;
+		}
+		else
+		{
+			click_count = 1;
+		}
+
+		input_state->time_since_click = wz->ticks_in_ns;
+		
 		wz->active_input = widget;
-		wz->input_box_timer = 0;
 		focused = true;
 
-		stb_textedit_click(input_state, &input_state->textedit_state, rel_x, rel_y);
+		if (!(flags & WZ_INPUT_READ_ONLY))
+		{
+			int cursor = input_state->textedit_state.cursor;
+			stb_textedit_click(input_state, &input_state->textedit_state,
+				text_x, rel_y);
 
-		if (click_count == 2)
-		{
-			int cur = input_state->textedit_state.cursor;
-			anchor_word_start = wz_input_word_start(input_state->buffer, cur);
-			anchor_word_end = wz_input_word_end(input_state->buffer, input_state->length, cur);
-			stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_WORDLEFT);
-			stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_WORDRIGHT | STB_TEXTEDIT_K_SHIFT);
-		}
-		else if (click_count >= 3)
-		{
-			stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_TEXTSTART);
-			stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_TEXTEND | STB_TEXTEDIT_K_SHIFT);
-			click_count = 3;
+			if (cursor != input_state->textedit_state.cursor)
+			{
+				moving_cursor = true;
+				input_state->time_since_blink = wz->ticks_in_ns();
+			}
+
+			if (click_count == 2)
+			{
+				int cur = input_state->textedit_state.cursor;
+				anchor_word_start = wz_input_word_start(input_state->buffer, cur);
+				anchor_word_end = wz_input_word_end(input_state->buffer, input_state->length, cur);
+				stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_WORDLEFT);
+				stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_WORDRIGHT | STB_TEXTEDIT_K_SHIFT);
+			}
+			else if (click_count >= 3)
+			{
+				stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_TEXTSTART);
+				stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_TEXTEND | STB_TEXTEDIT_K_SHIFT);
+				click_count = 3;
+			}
+			else // single click
+			{
+				if (flags & WZ_INPUT_AUTO_SELECT)
+				{
+					stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_TEXTSTART);
+					stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_TEXTEND | STB_TEXTEDIT_K_SHIFT);
+				}
+				else if (flags & WZ_INPUT_GOTO_END)
+				{
+					stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_TEXTEND);
+				}
+			}
 		}
 	}
-	else if (wz_widget_is_active(widget))
+	else if (wz_widget_is_active(widget) && !(flags & WZ_INPUT_READ_ONLY))
 	{
+
 		if (click_count == 1)
 		{
-			stb_textedit_drag(input_state, &input_state->textedit_state, rel_x, rel_y);
+			stb_textedit_drag(input_state, &input_state->textedit_state, text_x, rel_y);
 		}
 		else if (click_count == 2)
 		{
-			int drag_char = wz_input_char_at_x(wz, input_state->buffer, input_state->length, rel_x);
+			int drag_char = wz_input_char_at_x(wz, input_state->buffer, input_state->length, text_x);
 			STB_TexteditState* ts = &input_state->textedit_state;
 			if (drag_char <= anchor_word_start)
 			{
@@ -2333,10 +2438,12 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 		// click_count >= 3: no drag, all-text selection stays
 	}
 
-	wz_widget_set_border(widget, focused ? BorderType_InputBox : WZ_BORDER_TYPE_NONE);
-	wz_widget_set_color(widget, WZ_RAYWHITE);
-
 	if (focused)
+	{
+		wz_widget_set_color(widget, WZ_RAYWHITE);
+	}
+
+	if (focused && !(flags & WZ_INPUT_READ_ONLY))
 	{
 		for (unsigned i = 0; i < wz->events_count; ++i)
 		{
@@ -2344,25 +2451,40 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 			bool handled = false;
 			int stb_key = 0;
 
+			if (event->key.type != WZ_EVENT_TYPE_KEYBOARD || !event->key.down)
+			{
+				continue;
+			}
+
 			switch (event->key.key)
 			{
-			case '\b':
+			case '\b': // Backspace / Ctrl+Backspace (delete word left)
+				if (event->key.mod & WZ_KMOD_CTRL)
+					stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_WORDLEFT | STB_TEXTEDIT_K_SHIFT);
 				stb_key = STB_TEXTEDIT_K_BACKSPACE;
 				handled = true;
 				break;
-			case WZ_KEY_DELETE:
+			case WZ_KEY_DELETE: // Delete / Ctrl+Delete (delete word right)
+				if (event->key.mod & WZ_KMOD_CTRL)
+					stb_textedit_key(input_state, &input_state->textedit_state, STB_TEXTEDIT_K_WORDRIGHT | STB_TEXTEDIT_K_SHIFT);
 				stb_key = STB_TEXTEDIT_K_DELETE;
+				handled = true;
+				break;
+			case WZ_KEY_INSERT: // Toggle insert/replace mode
+				stb_key = STB_TEXTEDIT_K_INSERT;
 				handled = true;
 				break;
 			case WZ_KEY_LEFT:
 				stb_key = (event->key.mod & WZ_KMOD_CTRL) ? STB_TEXTEDIT_K_WORDLEFT : STB_TEXTEDIT_K_LEFT;
 				if (event->key.mod & WZ_KMOD_SHIFT) stb_key |= STB_TEXTEDIT_K_SHIFT;
 				handled = true;
+				moving_cursor = true;
 				break;
 			case WZ_KEY_RIGHT:
 				stb_key = (event->key.mod & WZ_KMOD_CTRL) ? STB_TEXTEDIT_K_WORDRIGHT : STB_TEXTEDIT_K_RIGHT;
 				if (event->key.mod & WZ_KMOD_SHIFT) stb_key |= STB_TEXTEDIT_K_SHIFT;
 				handled = true;
+				moving_cursor = true;
 				break;
 			case WZ_KEY_UP:
 				stb_key = STB_TEXTEDIT_K_UP;
@@ -2389,6 +2511,11 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 				focused = false;
 				handled = true;
 				break;
+			case '\r': // Enter — commit
+			case '\n':
+				if (wdata->input_committed) *wdata->input_committed = true;
+				handled = true;
+				break;
 			case 'a':
 				if (event->key.mod & WZ_KMOD_CTRL)
 				{
@@ -2397,8 +2524,17 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 					handled = true;
 					break;
 				}
+				goto insert_char;
+			case '\t': // Tab
+				if (flags & WZ_INPUT_ALLOW_TAB)
+				{
+					char tab = '\t';
+					stb_textedit_paste(input_state, &input_state->textedit_state, &tab, 1);
+					handled = true;
+				}
+				break;
 			case 'c':
-				if (event->key.mod & WZ_KMOD_CTRL)
+				if ((event->key.mod & WZ_KMOD_CTRL) && !(flags & WZ_INPUT_PASSWORD))
 				{
 					int sel_start = input_state->textedit_state.select_start;
 					int sel_end = input_state->textedit_state.select_end;
@@ -2412,8 +2548,9 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 					handled = true;
 					break;
 				}
+				goto insert_char;
 			case 'x':
-				if (event->key.mod & WZ_KMOD_CTRL)
+				if ((event->key.mod & WZ_KMOD_CTRL) && !(flags & WZ_INPUT_PASSWORD))
 				{
 					int sel_start = input_state->textedit_state.select_start;
 					int sel_end = input_state->textedit_state.select_end;
@@ -2428,6 +2565,7 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 					handled = true;
 					break;
 				}
+				goto insert_char;
 			case 'v':
 				if ((event->key.mod & WZ_KMOD_CTRL) && wz->pasted_text)
 				{
@@ -2438,6 +2576,7 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 					handled = true;
 					break;
 				}
+				goto insert_char;
 			case 'z':
 				if (event->key.mod & WZ_KMOD_CTRL)
 				{
@@ -2445,6 +2584,7 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 					handled = true;
 					break;
 				}
+				goto insert_char;
 			case 'y':
 				if (event->key.mod & WZ_KMOD_CTRL)
 				{
@@ -2452,12 +2592,14 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 					handled = true;
 					break;
 				}
+				goto insert_char;
+			insert_char:
 			default:
-				if (isprint(event->key.key) || event->key.key == ' ')
+				if (isprint((int)event->key.key) || event->key.key == ' ')
 				{
 					char c = (char)event->key.key;
+
 					stb_textedit_paste(input_state, &input_state->textedit_state, &c, 1);
-					wz->input_box_timer = 0;
 					handled = true;
 				}
 				break;
@@ -2466,46 +2608,94 @@ void wz_input_box_run(WzWidget widget, WzInputState* input_state)
 			if (handled && stb_key)
 				stb_textedit_key(input_state, &input_state->textedit_state, stb_key);
 		}
+	}
+
+	// Build display buffer: password mode masks every char with '*'
+	char display_buf[128];
+	const char* disp = input_state->buffer;
+	if (flags & WZ_INPUT_PASSWORD)
+	{
+		memset(display_buf, '*', input_state->length);
+		display_buf[input_state->length] = '\0';
+		disp = display_buf;
+	}
+
+	if (focused)
+	{
+		int first_char = 0;
 
 		// Selection highlight
 		{
-			int sel_start = input_state->textedit_state.select_start;
-			int sel_end = input_state->textedit_state.select_end;
-
-			if (sel_start > sel_end)
+			int selection_start = input_state->textedit_state.select_start;
+			int selection_end = input_state->textedit_state.select_end;
+			if (selection_start > selection_end)
 			{
-				int tmp = sel_start;
-				sel_start = sel_end;
-				sel_end = tmp;
+				int tmp = selection_start;
+				selection_start = selection_end;
+				selection_end = tmp;
 			}
-			if (sel_end > sel_start)
+			if (selection_end > selection_start)
 			{
-				WzWidgetData* data = wz_widget_get(widget);
-
-				float selection_w, h, up_to_selection_w;
-				wz->get_string_size(input_state->buffer, sel_start, sel_end, &selection_w, &h);
-				wz->get_string_size(input_state->buffer, 0, sel_start, &up_to_selection_w, &h);
-				wz_widget_add_rect_new(widget, data->pad_left + up_to_selection_w, data->pad_top, selection_w, h, 0x6699FFAA);
+				float selection_w, h, up_to_sel_w;
+				wz->get_string_size((char*)disp, selection_start, selection_end, &selection_w, &h);
+				wz->get_string_size((char*)disp, 0, selection_start, &up_to_sel_w, &h);
+				wz_widget_add_rect_new(widget, pad_x + up_to_sel_w, pad_y, selection_w, h, 0x6699FFAA);
+			}
+			else if (!(flags & WZ_INPUT_NO_CURSOR) && !input_state->dont_show_cursor)
+			{
+				float w, h;
+				wz->get_string_size((char*)disp, 0, input_state->textedit_state.cursor, &w, &h);
+				wz_widget_add_rect_new(widget, pad_x + w, pad_y + 2, 1, 16, WZ_BLACK);
 			}
 
-			if (sel_end == sel_start)
+		}
+
+		// Cursor
+		{
+			unsigned long time = wz->ticks_in_ns();
+			unsigned long delta = time - input_state->time_since_blink;
+			if (!moving_cursor)
 			{
-				// Caret — blink every 500ms, reset to visible on click/keypress
-				if ((int)(wz->input_box_timer / 250) % 2 == 0)
+				if (delta > 800000000)
 				{
-					WzWidgetData* data = wz_widget_get(widget);
-
-					float w, h;
-					wz->get_string_size(input_state->buffer, 0,
-						input_state->textedit_state.cursor, &w, &h);
-					wz_widget_add_rect_new(widget, data->pad_left + w, data->pad_top + 2, 1, 16, WZ_BLACK);
+					input_state->dont_show_cursor = !input_state->dont_show_cursor;
+					input_state->time_since_blink = time;
 				}
 			}
+			else
+			{
+				input_state->dont_show_cursor = false;
+				input_state->time_since_blink = time;
+			}
+		}
+
+		// Clip and render visible text (or placeholder if empty)
+		//wz_widget_clip(widget);
+		if (input_state->length == 0 && input_state->input_placeholder)
+		{
+			wz_widget_set_font_color(widget, 0x999999FF);
+			wz_widget_add_text_new(widget, wz_str_create(input_state->input_placeholder), x, y);
+		}
+		else
+		{
+			wz_widget_set_font_color(widget, WZ_BLACK);
+			wz_widget_add_text_new(widget, wz_str_create_slice((char*)disp, first_char, input_state->length), x, y);
 		}
 	}
-
-	wz_widget_add_text(widget,
-		wz_str_create_slice(input_state->buffer, 0, input_state->length));
+	else
+	{
+		// Unfocused: show placeholder when empty, otherwise show (masked) text
+		if (input_state->length == 0 && input_state->input_placeholder)
+		{
+			wz_widget_set_font_color(widget, 0x999999FF);
+			wz_widget_add_text(widget, wz_str_create(input_state->input_placeholder));
+		}
+		else
+		{
+			wz_widget_set_font_color(widget, WZ_BLACK);
+			wz_widget_add_text(widget, wz_str_create_slice((char*)disp, 0, input_state->length));
+		}
+	}
 }
 
 void wz_tree_node_get_children(WzTree* tree, WzTreeNode node, WzTreeNodeData** children,
@@ -2527,7 +2717,7 @@ void wz_do_layout_refactor_me()
 	static int widget_lane[MAX_NUM_WIDGETS];
 
 	memset(chunks, 0, sizeof(chunks));
-	memset(slots,  0, sizeof(slots));
+	memset(slots, 0, sizeof(slots));
 	for (int i = 0; i < MAX_NUM_WIDGETS; ++i) widget_to_chunk[i] = -1;
 
 	int queue[MAX_NUM_WIDGETS];
@@ -2548,18 +2738,18 @@ void wz_do_layout_refactor_me()
 		WzWidgetData* W = &wz->widgets[whandle];
 		int k = widget_to_chunk[whandle];
 
-		chunks[k].pad_left   = (float)W->pad_left;
-		chunks[k].pad_right  = (float)W->pad_right;
-		chunks[k].pad_top    = (float)W->pad_top;
+		chunks[k].pad_left = (float)W->pad_left;
+		chunks[k].pad_right = (float)W->pad_right;
+		chunks[k].pad_top = (float)W->pad_top;
 		chunks[k].pad_bottom = (float)W->pad_bottom;
-		chunks[k].child_gap  = (float)W->child_gap;
-		chunks[k].is_horiz   = (W->layout == 1);
-		chunks[k].cursor_x   = (float)W->pad_left;
-		chunks[k].cursor_y   = (float)W->pad_top;
-		chunks[k].par_chunk  = chunk_parent_chunk[k];
-		chunks[k].par_slot   = chunk_parent_lane[k];
-		chunks[k].shrink_w   = W->fit_w;
-		chunks[k].shrink_h   = W->fit_h;
+		chunks[k].child_gap = (float)W->child_gap;
+		chunks[k].is_horiz = (W->layout == 1);
+		chunks[k].cursor_x = (float)W->pad_left;
+		chunks[k].cursor_y = (float)W->pad_top;
+		chunks[k].par_chunk = chunk_parent_chunk[k];
+		chunks[k].par_slot = chunk_parent_lane[k];
+		chunks[k].shrink_w = W->fit_w;
+		chunks[k].shrink_h = W->fit_h;
 
 		int lane = 0;
 		for (int ci = 0; ci < W->children_count && lane < 8; ++ci)
@@ -2568,15 +2758,15 @@ void wz_do_layout_refactor_me()
 			WzWidgetData* C = &wz->widgets[chandle];
 			if (C->free_from_parent) continue;
 
-			slots[k].min_w[lane]      = (float)C->constraint_min_w;
-			slots[k].min_h[lane]      = (float)C->constraint_min_h;
-			slots[k].max_w[lane]      = C->constraint_max_w ? (float)C->constraint_max_w : 1e9f;
-			slots[k].max_h[lane]      = C->constraint_max_h ? (float)C->constraint_max_h : 1e9f;
-			slots[k].flex[lane]       = (float)C->flex_factor;
-			slots[k].margin_l[lane]   = (float)C->margin_left;
-			slots[k].margin_r[lane]   = (float)C->margin_right;
-			slots[k].margin_t[lane]   = (float)C->margin_top;
-			slots[k].margin_b[lane]   = (float)C->margin_bottom;
+			slots[k].min_w[lane] = (float)C->constraint_min_w;
+			slots[k].min_h[lane] = (float)C->constraint_min_h;
+			slots[k].max_w[lane] = C->constraint_max_w ? (float)C->constraint_max_w : 1e9f;
+			slots[k].max_h[lane] = C->constraint_max_h ? (float)C->constraint_max_h : 1e9f;
+			slots[k].flex[lane] = (float)C->flex_factor;
+			slots[k].margin_l[lane] = (float)C->margin_left;
+			slots[k].margin_r[lane] = (float)C->margin_right;
+			slots[k].margin_t[lane] = (float)C->margin_top;
+			slots[k].margin_b[lane] = (float)C->margin_bottom;
 			slots[k].cross_align[lane] = (float)C->cross_axis_alignment;
 
 			widget_parent_chunk[chandle] = k;
@@ -2587,7 +2777,7 @@ void wz_do_layout_refactor_me()
 				int k_child = num_chunks++;
 				widget_to_chunk[chandle] = k_child;
 				chunk_parent_chunk[k_child] = k;
-				chunk_parent_lane[k_child]  = lane;
+				chunk_parent_lane[k_child] = lane;
 				queue[qtail++] = chandle;
 			}
 			++lane;
@@ -2609,7 +2799,7 @@ void wz_do_layout_refactor_me()
 			W->actual_h = W->constraint_min_h;
 			continue;
 		}
-		int pk   = widget_parent_chunk[whandle];
+		int pk = widget_parent_chunk[whandle];
 		int lane = widget_lane[whandle];
 		W->actual_x = (int)slots[pk].abs_x[lane];
 		W->actual_y = (int)slots[pk].abs_y[lane];
@@ -2726,7 +2916,7 @@ void wz_end()
 		}
 	}
 
-	
+
 	// Second pass: handle scrollbars
 	for (int i = 0; i < wz->scrollbars_count; ++i)
 	{
@@ -2857,7 +3047,7 @@ void wz_end()
 		}
 		case WZ_WIDGET_TYPE_INPUT_BOX:
 		{
-			wz_input_box_run(widget->handle, &wz->active_input_box);
+			//wz_text_box_run(widget->handle, widget->input_state);
 			break;
 		}
 		}
@@ -3227,14 +3417,29 @@ static int wz_input_word_end(const char* buf, int len, int pos)
 	return pos;
 }
 
-WzWidget wz_input_box_raw(
-	WzWidget parent, WzInputState *state, const char* file, unsigned int line)
+int wz_filter_decimal(unsigned int c) { return c >= '0' && c <= '9'; }
+int wz_filter_float(unsigned int c) { return (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E'; }
+int wz_filter_hex(unsigned int c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+int wz_filter_alpha(unsigned int c) { return isalpha((unsigned char)c); }
+int wz_filter_alphanumeric(unsigned int c) { return isalnum((unsigned char)c); }
+
+WzWidget wz_text_box_raw(
+	WzWidget parent, WzInputState* state,
+	unsigned flags, WzInputFilter filter,
+	bool* committed, const char* placeholder,
+	const char* file, unsigned int line)
 {
 	WzWidget widget = wz_widget_raw(parent, file, line);
-	wz_widget_set_size(widget, 100, 18 + 11 * 2);
-	wz_widget_set_pad(widget, 11);
-	wz_widget_get(widget)->type = WZ_WIDGET_TYPE_INPUT_BOX;
+	wz_widget_set_size(widget, 100, 18 + 4 * 2);
+	wz_widget_set_pad(widget, 4);
+	wz_widget_clip(widget);
+	wz_widget_set_border(widget, WZ_BORDER_TYPE_DEFAULT);
 
+	WzWidgetData* data = wz_widget_get(widget);
+	data->type = WZ_WIDGET_TYPE_INPUT_BOX;
+	data->input_flags = flags;
+	data->input_committed = committed;
+	data->input_state = state;
 	return widget;
 }
 

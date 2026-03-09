@@ -130,11 +130,17 @@
 
 #include "stb_textedit.h"
 
-typedef struct WzInputState {
+typedef struct WzInputState
+{
 	char buffer[128];
 	int length;
 	int max_length;
 	STB_TexteditState textedit_state;
+	unsigned long time_since_click;
+	const char* input_placeholder;
+
+	bool dont_show_cursor;
+	unsigned time_since_blink;
 } WzInputState;
 
 // define all the #defines needed 
@@ -235,7 +241,7 @@ typedef enum WzBorderType
 {
 	WZ_BORDER_TYPE_NONE, WZ_BORDER_TYPE_TAB, WZ_BORDER_TYPE_DEFAULT, WZ_BORDER_TYPE_RED,
 	WZ_BORDER_TYPE_BLACK, WZ_BORDER_TYPE_CLICKED,
-	BorderType_InputBox, WZ_BORDER_TYPE_BOTTOM_LINE, BorderType_LeftLine, BorderType_Custom
+	WZ_BORDER_TYPE_TEXT_BOX, WZ_BORDER_TYPE_BOTTOM_LINE, BorderType_LeftLine, BorderType_Custom
 } WzBorderType;
 
 typedef struct wzrd_texture {
@@ -454,6 +460,14 @@ typedef struct
 	unsigned text_alignment;
 	bool disable;
 
+	bool clip;
+	float clip_x, clip_y, clip_w, clip_h;
+
+	// Input box configuration (set by wz_text_box_raw, read by wz_text_box_run)
+	unsigned input_flags;
+	bool* input_committed;
+	WzInputState* input_state;
+
 	// State
 	bool* released;
 } WzWidgetData;
@@ -589,6 +603,7 @@ enum
 	WZ_KMOD_GUI = WZ_KMOD_LGUI | WZ_KMOD_RGUI,
 };
 
+#define DOUBLE_CLICK_TIME_NS 300
 
 
 
@@ -607,7 +622,6 @@ typedef struct WzGui
 	int hovered_boxes_count;
 
 	WzRect window;
-	float input_box_timer;
 	double tooltip_time;
 	WzWidgetData dragged_box;
 	bool clean;
@@ -669,7 +683,7 @@ typedef struct WzGui
 	char* pasted_text;
 	char copied_text[128];
 
-	unsigned long (*get_ticks)(void);
+	unsigned long (*ticks_in_ns)();
 
 } WzGui;
 
@@ -801,8 +815,8 @@ void wz_gui_init(WzGui* wz);
 void wz_gui_deinit(WzGui* wz);
 WzWidget wz_begin(
 	unsigned window_w, unsigned  window_h,
-	float mouse_x, float mouse_y,
-	WzState left_mouse_state,
+	//float mouse_x, float mouse_y,
+	//WzState left_mouse_state,
 	WzEvent* events,
 	unsigned events_count,
 	bool enable_input);
@@ -893,7 +907,24 @@ WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active, const c
 WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, bool* active, const char* file, unsigned int line);
 void wzrd_label_list_sorted_raw(WzStr* item_names, unsigned int count, int* items, unsigned int width, unsigned int height, unsigned int color, unsigned int* selected, bool* is_selected, WzWidget parent, const char* file, unsigned int line);
 void wzrd_label_list_raw(WzStr* item_names, unsigned int count, unsigned int width, unsigned int height, unsigned int color, WzWidget* handles, unsigned int* selected, bool* is_selected, WzWidget parent, const char* file, unsigned int line);
-WzWidget wz_input_box_raw(WzWidget parent, WzInputState *state, const char* file, unsigned int line);
+// Flags for wz_input_box
+#define WZ_INPUT_NONE        0
+#define WZ_INPUT_AUTO_SELECT (1 << 0)   // select all text when focused
+#define WZ_INPUT_GOTO_END    (1 << 1)   // move cursor to end when focused
+#define WZ_INPUT_READ_ONLY   (1 << 2)   // display only, no editing
+#define WZ_INPUT_NO_CURSOR   (1 << 3)   // hide blinking caret
+#define WZ_INPUT_PASSWORD    (1 << 4)   // mask text with * (blocks copy/cut)
+#define WZ_INPUT_ALLOW_TAB   (1 << 5)   // Tab key inserts a tab character
+
+// Character filter callback: return nonzero to allow, zero to block
+typedef int (*WzInputFilter)(unsigned int c);
+int wz_filter_decimal(unsigned int c);
+int wz_filter_float(unsigned int c);
+int wz_filter_hex(unsigned int c);
+int wz_filter_alpha(unsigned int c);
+int wz_filter_alphanumeric(unsigned int c);
+
+WzWidget wz_text_box_raw(WzWidget parent, WzInputState* state, unsigned flags, WzInputFilter filter, bool* committed, const char* placeholder, const char* file, unsigned int line);
 WzWidget wzrd_handle_button_raw(bool* active, WzRect rect, unsigned int color, WzStr name, WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_label_raw(WzWidget parent, WzStr str, const char* file, unsigned int line);
 WzWidget wzrd_vbox_border_raw(wzrd_v2 size, WzWidget parent, const char* file, unsigned int line);
@@ -962,8 +993,8 @@ WzWidget wz_scene(WzScene scene, WzWidget parent, WzTexture texture, int x, int 
 // Missing checkbox, radiobox, combox
 #define wz_label(parent, str) wz_label_raw(parent, str, __FILE__, __LINE__)
 #define wz_command_button(str, b, parent) wz_command_button_raw(str, b, parent, __FILE__, __LINE__)
-#define wz_input_box(parent, state) \
-	wz_input_box_raw(parent, state, __FILE__, __LINE__)
+#define wz_text_box(parent, state, flags, filter, committed, placeholder) \
+	wz_text_box_raw(parent, state, flags, filter, committed, placeholder, __FILE__, __LINE__)
 	
 float wz_get_font_width(WzInputState *, int, int);
 

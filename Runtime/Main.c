@@ -205,7 +205,7 @@ bool wz_keycode_is_extended(WZ_Keycode keycode)
 }
 
 void render_text(SDL_Renderer* renderer, stbtt_fontinfo* font,
-	const char* text, int x, int y, float font_size, unsigned len)
+	const char* text, float x, float y, float font_size, unsigned len)
 {
 	float scale = stbtt_ScaleForPixelHeight(font, font_size);
 	int ascent, descent, lineGap;
@@ -266,7 +266,7 @@ typedef struct Wsdl
 Wsdl wsdl;
 
 typedef struct
-{	
+{
 	SDL_Window* window;
 	SDL_Renderer* renderer;
 	TTF_TextEngine* text_engine;
@@ -294,7 +294,7 @@ static void wz_push_filled_rect(WzDrawCommandBuffer* buf, float x, float y, floa
 {
 	if (!buf || buf->count >= MAX_NUM_DRAW_COMMANDS - 1) return;
 	WzDrawCommand* cmd = &buf->commands[buf->count++];
-	cmd->type  = DrawCommandType_Rect;
+	cmd->type = DrawCommandType_Rect;
 	cmd->x = x; cmd->y = y; cmd->w = w; cmd->h = h; cmd->color = color;
 }
 
@@ -391,6 +391,7 @@ static void WSDL_RenderCommandBuffer(SDL_Renderer* renderer, WzDrawCommandBuffer
 
 static void WSDL_WzBeginWidgets(WSDL_Context* context)
 {
+
 	Uint32 flags = SDL_GetWindowFlags(context->window);
 	float mouse_x = 0, mouse_y = 0;
 	if (flags & SDL_WINDOW_MOUSE_FOCUS)
@@ -398,10 +399,15 @@ static void WSDL_WzBeginWidgets(WSDL_Context* context)
 		SDL_GetMouseState(&mouse_x, &mouse_y);
 	}
 
+	context->gui.mouse_pos.x = mouse_x;
+	context->gui.mouse_pos.y = mouse_y;
+#if 0
+
 	// Mouse Input
 	{
 		float mx, my;
 		Uint32 mflags = SDL_GetMouseState(&mx, &my);
+		printf("%u\n", mflags);
 
 		if (left_mouse == WZ_ACTIVATING)
 		{
@@ -427,9 +433,9 @@ static void WSDL_WzBeginWidgets(WSDL_Context* context)
 			}
 		}
 	}
-
+#endif
 	wz_begin(WINDOW_WIDTH, WINDOW_HEIGHT,
-		mouse_x, mouse_y, left_mouse, events, events_count, true);
+		events, events_count, true);
 }
 
 void WSDL_WzEnd(WSDL_Context* context)
@@ -624,7 +630,7 @@ static int WSDL_TranslateToWzKeycodes(SDL_Scancode scancode) {
 	case SDL_SCANCODE_BACKSPACE: return '\b';
 	case SDL_SCANCODE_ESCAPE: return 27;  // ESC
 
-	// Punctuation (you may need to adjust these based on your keyboard layout)
+		// Punctuation (you may need to adjust these based on your keyboard layout)
 	case SDL_SCANCODE_MINUS: return '-';
 	case SDL_SCANCODE_EQUALS: return '=';
 	case SDL_SCANCODE_LEFTBRACKET: return '[';
@@ -726,7 +732,6 @@ static int WSDL_TranslateToWzKeycodes(SDL_Scancode scancode) {
 	}
 }
 
-
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 {
 	WzEvent wz_event = { 0 };
@@ -753,17 +758,18 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 		if (wz_key != WZ_KEY_UNKNOWN) {
 			wz_event.key = (WzKeyboardEvent)
 			{
-				.type = WZ_EVENT_TYPE_KEYBOARD ,
+				.type = WZ_EVENT_TYPE_KEYBOARD,
 				.mod = sdl_keymod_to_wz(event->key.mod),
+				.key = wz_key,
 			};
 		}
 		break;
 	}
 
-	// Mouse button events
+						 // Mouse button events
 	case SDL_EVENT_MOUSE_BUTTON_DOWN: {
 		wz_input_mouse_button_event(
-			event->button.button, 
+			event->button.button,
 			true,
 			event->button.x,
 			event->button.y
@@ -775,6 +781,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			.down = true,
 			.x = event->button.x,
 			.y = event->button.y,
+			.type = WZ_EVENT_TYPE_MOUSE,
 		};
 		break;
 	}
@@ -792,6 +799,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			.button = event->button.button,
 			.x = event->button.x,
 			.y = event->button.y,
+			.type = WZ_EVENT_TYPE_MOUSE,
 		};
 
 		break;
@@ -889,7 +897,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 	{
 		font_height = 18;
 		size_t file_size;
-		char *data = SDL_LoadFile("C:\\Windows\\Fonts\\Arial.ttf", &file_size);
+		char* data = SDL_LoadFile("C:\\Windows\\Fonts\\Arial.ttf", &file_size);
 		if (!data) {
 			SDL_Log("Failed to open file: %s", SDL_GetError());
 			SDL_Quit();
@@ -912,7 +920,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 		gui.x_icon = (WzTexture){ .w = surface->w, .h = surface->h, .data = SDL_CreateTextureFromSurface(gui_window.renderer, surface) };
 	}
 
-	gui_window.gui.get_ticks = SDL_GetTicksNS;
 
 	if (!success)
 	{
@@ -988,20 +995,22 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	wz_set_gui(&gui_window.gui);
 	wz_set_string_size_callback(get_string_size);
 
+	gui_window.gui.ticks_in_ns = SDL_GetTicksNS;
+
 	WSDL_WzBeginWidgets(&gui_window);
 
 	WzWidget ib_window = wz_vbox((WzWidget) { 0 });
 	wz_widget_set_size(ib_window, 300, 30);
 	wz_widget_set_border(ib_window, WZ_BORDER_TYPE_NONE);
-	WzInputState state = { 0 };
-	{
-		gui_window.gui.pasted_text = SDL_GetClipboardText();
-		WzWidget input_box = wz_input_box(ib_window, &state);
-		(void)input_box;
 
-		static bool b;
-		wz_command_button(wz_str_create("asd"), &b, ib_window);
-	}
+	// Widgets declarations
+	gui_window.gui.pasted_text = SDL_GetClipboardText();
+	static WzInputState state, state2;
+	WzWidget input_box = wz_text_box(ib_window, &state, WZ_INPUT_NONE, NULL, NULL, NULL);
+	WzWidget input_box2 = wz_text_box(ib_window, &state2, WZ_INPUT_NONE, NULL, NULL, NULL);
+
+	static bool b;
+	wz_command_button(wz_str_create("asd"), &b, ib_window);
 
 	WSDL_WzEnd(&gui_window);
 
@@ -1032,7 +1041,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
 		return SDL_APP_FAILURE;
 	}
-	
+
 	events_count = 0;
 
 	return SDL_APP_CONTINUE;
@@ -1058,65 +1067,65 @@ static void wz_layout_ispc_test(void)
 {
 #define TEST_CHUNK_SIZE 8
 
-    // WzChunk and WzSlot types come from WzLayout_ispc.h
-    struct WzChunk chunks[2];
-    struct WzSlot  slots[2];   // one SOA group per chunk
+	// WzChunk and WzSlot types come from WzLayout_ispc.h
+	struct WzChunk chunks[2];
+	struct WzSlot  slots[2];   // one SOA group per chunk
 
-    memset(chunks, 0, sizeof(chunks));
-    memset(slots,  0, sizeof(slots));
+	memset(chunks, 0, sizeof(chunks));
+	memset(slots, 0, sizeof(slots));
 
-    // ---- chunk 0: root ----
-    chunks[0].pad_left    = 10;
-    chunks[0].pad_right   = 10;
-    chunks[0].pad_top     = 10;
-    chunks[0].pad_bottom  = 10;
-    chunks[0].child_gap   = 5;
-    chunks[0].is_horiz    = 0;
-    chunks[0].child_count = 3;
-    chunks[0].par_chunk   = 0;
-    chunks[0].par_slot    = 0;
-    chunks[0].cursor_x    = chunks[0].pad_left;
-    chunks[0].cursor_y    = chunks[0].pad_top;
+	// ---- chunk 0: root ----
+	chunks[0].pad_left = 10;
+	chunks[0].pad_right = 10;
+	chunks[0].pad_top = 10;
+	chunks[0].pad_bottom = 10;
+	chunks[0].child_gap = 5;
+	chunks[0].is_horiz = 0;
+	chunks[0].child_count = 3;
+	chunks[0].par_chunk = 0;
+	chunks[0].par_slot = 0;
+	chunks[0].cursor_x = chunks[0].pad_left;
+	chunks[0].cursor_y = chunks[0].pad_top;
 
-    // root available space = window size (written into slot 0 of chunk 0)
-    slots[0].avail_w[0] = 800;
-    slots[0].avail_h[0] = 600;
+	// root available space = window size (written into slot 0 of chunk 0)
+	slots[0].avail_w[0] = 800;
+	slots[0].avail_h[0] = 600;
 
-    // ---- chunk 1: three children of root ----
-    chunks[1].pad_left    = 0;
-    chunks[1].pad_right   = 0;
-    chunks[1].pad_top     = 0;
-    chunks[1].pad_bottom  = 0;
-    chunks[1].child_gap   = 0;
-    chunks[1].is_horiz    = 0;   // vertical
-    chunks[1].child_count = 3;
-    chunks[1].par_chunk   = 0;
-    chunks[1].par_slot    = 0;
-    chunks[1].cursor_x    = 0;
-    chunks[1].cursor_y    = 0;
+	// ---- chunk 1: three children of root ----
+	chunks[1].pad_left = 0;
+	chunks[1].pad_right = 0;
+	chunks[1].pad_top = 0;
+	chunks[1].pad_bottom = 0;
+	chunks[1].child_gap = 0;
+	chunks[1].is_horiz = 0;   // vertical
+	chunks[1].child_count = 3;
+	chunks[1].par_chunk = 0;
+	chunks[1].par_slot = 0;
+	chunks[1].cursor_x = 0;
+	chunks[1].cursor_y = 0;
 
-    slots[1].min_w[0] = 200;  slots[1].min_h[0] = 30;  slots[1].flex[0] = 0;
-    slots[1].min_w[1] = 200;  slots[1].min_h[1] = 0;   slots[1].flex[1] = 1;
-    slots[1].min_w[2] = 200;  slots[1].min_h[2] = 40;  slots[1].flex[2] = 0;
+	slots[1].min_w[0] = 200;  slots[1].min_h[0] = 30;  slots[1].flex[0] = 0;
+	slots[1].min_w[1] = 200;  slots[1].min_h[1] = 0;   slots[1].flex[1] = 1;
+	slots[1].min_w[2] = 200;  slots[1].min_h[2] = 40;  slots[1].flex[2] = 0;
 
-    wz_layout_chunks(chunks, slots, 2);
+	wz_layout_chunks(chunks, slots, 2);
 
-    SDL_Log("---- wz_layout ISPC test ----");
-    for (int chunk = 0; chunk < 2; ++chunk)
-    {
-        for (int slot = 0; slot < TEST_CHUNK_SIZE; ++slot)
-        {
-            float w = slots[chunk].abs_w[slot];
-            float h = slots[chunk].abs_h[slot];
-            if (w == 0.f && h == 0.f) continue;
+	SDL_Log("---- wz_layout ISPC test ----");
+	for (int chunk = 0; chunk < 2; ++chunk)
+	{
+		for (int slot = 0; slot < TEST_CHUNK_SIZE; ++slot)
+		{
+			float w = slots[chunk].abs_w[slot];
+			float h = slots[chunk].abs_h[slot];
+			if (w == 0.f && h == 0.f) continue;
 
-            SDL_Log("  chunk %d  slot %d :  x=%.0f  y=%.0f  w=%.0f  h=%.0f",
-                chunk, slot,
-                slots[chunk].abs_x[slot], slots[chunk].abs_y[slot],
-                w, h);
-        }
-    }
-    SDL_Log("------------------------------");
+			SDL_Log("  chunk %d  slot %d :  x=%.0f  y=%.0f  w=%.0f  h=%.0f",
+				chunk, slot,
+				slots[chunk].abs_x[slot], slots[chunk].abs_y[slot],
+				w, h);
+		}
+	}
+	SDL_Log("------------------------------");
 }
 
 // -----------------------------------------------------------------------
@@ -1134,258 +1143,258 @@ static void wz_layout_ispc_test(void)
 #define BENCH_CHUNKS 1024
 static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out)
 {
-    static struct WzChunk chunks[BENCH_CHUNKS];
-    static struct WzSlot  slots[BENCH_CHUNKS];
-    memset(chunks, 0, sizeof(chunks));
-    memset(slots,  0, sizeof(slots));
+	static struct WzChunk chunks[BENCH_CHUNKS];
+	static struct WzSlot  slots[BENCH_CHUNKS];
+	memset(chunks, 0, sizeof(chunks));
+	memset(slots, 0, sizeof(slots));
 
-    // -----------------------------------------------------------------
-    // Chunk 0: root  (vertical, 4 rows)
-    // -----------------------------------------------------------------
-    chunks[0].pad_left    = 16; chunks[0].pad_right   = 16;
-    chunks[0].pad_top     = 16; chunks[0].pad_bottom  = 16;
-    chunks[0].child_gap   = 12;
-    chunks[0].child_count = 4;
-    chunks[0].is_horiz    = 0;
-    chunks[0].par_chunk   = 0;  chunks[0].par_slot = 0;
-    chunks[0].cursor_x    = 16; chunks[0].cursor_y = 16;
-    slots[0].avail_w[0]   = WINDOW_WIDTH;
-    slots[0].avail_h[0]   = WINDOW_HEIGHT;
-    // flex[3]=3 matches chunks[0].flex_total (accumulated from chunk 2's 3 flex children),
-    // so the yellow shrink row receives ALL remaining window height — then shrink_h clamps it.
-    slots[0].flex[3]      = 3;
+	// -----------------------------------------------------------------
+	// Chunk 0: root  (vertical, 4 rows)
+	// -----------------------------------------------------------------
+	chunks[0].pad_left = 16; chunks[0].pad_right = 16;
+	chunks[0].pad_top = 16; chunks[0].pad_bottom = 16;
+	chunks[0].child_gap = 12;
+	chunks[0].child_count = 4;
+	chunks[0].is_horiz = 0;
+	chunks[0].par_chunk = 0;  chunks[0].par_slot = 0;
+	chunks[0].cursor_x = 16; chunks[0].cursor_y = 16;
+	slots[0].avail_w[0] = WINDOW_WIDTH;
+	slots[0].avail_h[0] = WINDOW_HEIGHT;
+	// flex[3]=3 matches chunks[0].flex_total (accumulated from chunk 2's 3 flex children),
+	// so the yellow shrink row receives ALL remaining window height — then shrink_h clamps it.
+	slots[0].flex[3] = 3;
 
-    // -----------------------------------------------------------------
-    // Chunk 1: MARGINS demo  (red row)
-    //   3 children. Child[1] has margin_l=margin_r=24.
-    //   Visible: child[1] box is inset 24px from its allocated footprint.
-    // -----------------------------------------------------------------
-    chunks[1].pad_left    = 8;  chunks[1].pad_right  = 8;
-    chunks[1].pad_top     = 8;  chunks[1].pad_bottom = 8;
-    chunks[1].child_gap   = 8;
-    chunks[1].child_count = 3;
-    chunks[1].is_horiz    = 1;
-    chunks[1].par_chunk   = 0;  chunks[1].par_slot = 0;
-    chunks[1].cursor_x    = 8;  chunks[1].cursor_y = 8;
-    slots[1].min_w[0] = 100;  slots[1].min_h[0] = 50;
-    slots[1].min_w[1] = 100;  slots[1].min_h[1] = 50;
-    slots[1].margin_l[1] = 24; slots[1].margin_r[1] = 24; // <-- margins
-    slots[1].min_w[2] = 100;  slots[1].min_h[2] = 50;
+	// -----------------------------------------------------------------
+	// Chunk 1: MARGINS demo  (red row)
+	//   3 children. Child[1] has margin_l=margin_r=24.
+	//   Visible: child[1] box is inset 24px from its allocated footprint.
+	// -----------------------------------------------------------------
+	chunks[1].pad_left = 8;  chunks[1].pad_right = 8;
+	chunks[1].pad_top = 8;  chunks[1].pad_bottom = 8;
+	chunks[1].child_gap = 8;
+	chunks[1].child_count = 3;
+	chunks[1].is_horiz = 1;
+	chunks[1].par_chunk = 0;  chunks[1].par_slot = 0;
+	chunks[1].cursor_x = 8;  chunks[1].cursor_y = 8;
+	slots[1].min_w[0] = 100;  slots[1].min_h[0] = 50;
+	slots[1].min_w[1] = 100;  slots[1].min_h[1] = 50;
+	slots[1].margin_l[1] = 24; slots[1].margin_r[1] = 24; // <-- margins
+	slots[1].min_w[2] = 100;  slots[1].min_h[2] = 50;
 
-    // -----------------------------------------------------------------
-    // Chunk 2: MAX WIDTH demo  (green row)
-    //   3 flex=1 children. Child[1] has max_w=100 — stays narrow; others grow.
-    // -----------------------------------------------------------------
-    chunks[2].pad_left    = 8;  chunks[2].pad_right  = 8;
-    chunks[2].pad_top     = 8;  chunks[2].pad_bottom = 8;
-    chunks[2].child_gap   = 8;
-    chunks[2].child_count = 3;
-    chunks[2].is_horiz    = 1;
-    chunks[2].par_chunk   = 0;  chunks[2].par_slot = 1;
-    chunks[2].cursor_x    = 8;  chunks[2].cursor_y = 8;
-    slots[2].min_w[0] = 60;  slots[2].min_h[0] = 50;  slots[2].flex[0] = 1;
-    slots[2].min_w[1] = 60;  slots[2].min_h[1] = 50;  slots[2].flex[1] = 1;
-    slots[2].max_w[1] = 100; // <-- max width cap
-    slots[2].min_w[2] = 60;  slots[2].min_h[2] = 50;  slots[2].flex[2] = 1;
+	// -----------------------------------------------------------------
+	// Chunk 2: MAX WIDTH demo  (green row)
+	//   3 flex=1 children. Child[1] has max_w=100 — stays narrow; others grow.
+	// -----------------------------------------------------------------
+	chunks[2].pad_left = 8;  chunks[2].pad_right = 8;
+	chunks[2].pad_top = 8;  chunks[2].pad_bottom = 8;
+	chunks[2].child_gap = 8;
+	chunks[2].child_count = 3;
+	chunks[2].is_horiz = 1;
+	chunks[2].par_chunk = 0;  chunks[2].par_slot = 1;
+	chunks[2].cursor_x = 8;  chunks[2].cursor_y = 8;
+	slots[2].min_w[0] = 60;  slots[2].min_h[0] = 50;  slots[2].flex[0] = 1;
+	slots[2].min_w[1] = 60;  slots[2].min_h[1] = 50;  slots[2].flex[1] = 1;
+	slots[2].max_w[1] = 100; // <-- max width cap
+	slots[2].min_w[2] = 60;  slots[2].min_h[2] = 50;  slots[2].flex[2] = 1;
 
-    // -----------------------------------------------------------------
-    // Chunk 3: CROSS-AXIS ALIGNMENT demo  (blue row)  + visible border
-    //   4 children, same width, different heights:
-    //     [0] h=40  cross_align=0    → top
-    //     [1] h=90  cross_align=0    → reference (tallest, defines inner_h)
-    //     [2] h=40  cross_align=0.5  → vertically centered
-    //     [3] h=40  cross_align=1.0  → bottom
-    // -----------------------------------------------------------------
-    chunks[3].pad_left    = 8;  chunks[3].pad_right  = 8;
-    chunks[3].pad_top     = 8;  chunks[3].pad_bottom = 8;
-    chunks[3].border_l    = 3;  chunks[3].border_r   = 3;
-    chunks[3].border_t    = 3;  chunks[3].border_b   = 3;
-    chunks[3].child_gap   = 8;
-    chunks[3].child_count = 4;
-    chunks[3].is_horiz    = 1;
-    chunks[3].par_chunk   = 0;  chunks[3].par_slot = 2;
-    chunks[3].cursor_x    = 8 + 3;  // pad + border
-    chunks[3].cursor_y    = 8 + 3;
-    slots[3].min_w[0] = 90;  slots[3].min_h[0] = 40;  slots[3].cross_align[0] = 0.0f;
-    slots[3].min_w[1] = 90;  slots[3].min_h[1] = 90;  slots[3].cross_align[1] = 0.0f; // ref
-    slots[3].min_w[2] = 90;  slots[3].min_h[2] = 40;  slots[3].cross_align[2] = 0.5f;
-    slots[3].min_w[3] = 90;  slots[3].min_h[3] = 40;  slots[3].cross_align[3] = 1.0f;
+	// -----------------------------------------------------------------
+	// Chunk 3: CROSS-AXIS ALIGNMENT demo  (blue row)  + visible border
+	//   4 children, same width, different heights:
+	//     [0] h=40  cross_align=0    → top
+	//     [1] h=90  cross_align=0    → reference (tallest, defines inner_h)
+	//     [2] h=40  cross_align=0.5  → vertically centered
+	//     [3] h=40  cross_align=1.0  → bottom
+	// -----------------------------------------------------------------
+	chunks[3].pad_left = 8;  chunks[3].pad_right = 8;
+	chunks[3].pad_top = 8;  chunks[3].pad_bottom = 8;
+	chunks[3].border_l = 3;  chunks[3].border_r = 3;
+	chunks[3].border_t = 3;  chunks[3].border_b = 3;
+	chunks[3].child_gap = 8;
+	chunks[3].child_count = 4;
+	chunks[3].is_horiz = 1;
+	chunks[3].par_chunk = 0;  chunks[3].par_slot = 2;
+	chunks[3].cursor_x = 8 + 3;  // pad + border
+	chunks[3].cursor_y = 8 + 3;
+	slots[3].min_w[0] = 90;  slots[3].min_h[0] = 40;  slots[3].cross_align[0] = 0.0f;
+	slots[3].min_w[1] = 90;  slots[3].min_h[1] = 90;  slots[3].cross_align[1] = 0.0f; // ref
+	slots[3].min_w[2] = 90;  slots[3].min_h[2] = 40;  slots[3].cross_align[2] = 0.5f;
+	slots[3].min_w[3] = 90;  slots[3].min_h[3] = 40;  slots[3].cross_align[3] = 1.0f;
 
-    // -----------------------------------------------------------------
-    // Chunk 4: SHRINK-TO-HEIGHT demo  (yellow row)
-    //   slots[0].flex[3]=3 gives this row all extra window height.
-    //   shrink_h=1 clamps it back to its natural content height.
-    //   Without shrink_h the yellow row would fill the rest of the screen.
-    // -----------------------------------------------------------------
-    chunks[4].pad_left    = 8;  chunks[4].pad_right  = 8;
-    chunks[4].pad_top     = 8;  chunks[4].pad_bottom = 8;
-    chunks[4].child_gap   = 8;
-    chunks[4].child_count = 3;
-    chunks[4].is_horiz    = 1;
-    chunks[4].par_chunk   = 0;  chunks[4].par_slot = 3;
-    chunks[4].cursor_x    = 8;  chunks[4].cursor_y = 8;
-    chunks[4].shrink_h    = 1;  // <-- shrink
-    slots[4].min_w[0] = 80;  slots[4].min_h[0] = 50;
-    slots[4].min_w[1] = 80;  slots[4].min_h[1] = 50;
-    slots[4].min_w[2] = 80;  slots[4].min_h[2] = 50;
+	// -----------------------------------------------------------------
+	// Chunk 4: SHRINK-TO-HEIGHT demo  (yellow row)
+	//   slots[0].flex[3]=3 gives this row all extra window height.
+	//   shrink_h=1 clamps it back to its natural content height.
+	//   Without shrink_h the yellow row would fill the rest of the screen.
+	// -----------------------------------------------------------------
+	chunks[4].pad_left = 8;  chunks[4].pad_right = 8;
+	chunks[4].pad_top = 8;  chunks[4].pad_bottom = 8;
+	chunks[4].child_gap = 8;
+	chunks[4].child_count = 3;
+	chunks[4].is_horiz = 1;
+	chunks[4].par_chunk = 0;  chunks[4].par_slot = 3;
+	chunks[4].cursor_x = 8;  chunks[4].cursor_y = 8;
+	chunks[4].shrink_h = 1;  // <-- shrink
+	slots[4].min_w[0] = 80;  slots[4].min_h[0] = 50;
+	slots[4].min_w[1] = 80;  slots[4].min_h[1] = 50;
+	slots[4].min_w[2] = 80;  slots[4].min_h[2] = 50;
 
-    // Benchmark chunks: self-referential so Pass 1 writes into own slots only
-    for (int i = 5; i < BENCH_CHUNKS; ++i)
-    {
-        chunks[i].pad_left    = 4;  chunks[i].pad_right = 4;
-        chunks[i].child_gap   = 2;
-        chunks[i].is_horiz    = i % 2;
-        chunks[i].child_count = 4;
-        chunks[i].par_chunk   = i;
-        chunks[i].par_slot    = 0;
-        chunks[i].cursor_x    = 4;  chunks[i].cursor_y = 4;
-        for (int j = 0; j < 4; ++j)
-        {
-            slots[i].min_w[j] = 40.f + (float)(j * 10);
-            slots[i].min_h[j] = 20.f + (float)(j *  5);
-        }
-    }
+	// Benchmark chunks: self-referential so Pass 1 writes into own slots only
+	for (int i = 5; i < BENCH_CHUNKS; ++i)
+	{
+		chunks[i].pad_left = 4;  chunks[i].pad_right = 4;
+		chunks[i].child_gap = 2;
+		chunks[i].is_horiz = i % 2;
+		chunks[i].child_count = 4;
+		chunks[i].par_chunk = i;
+		chunks[i].par_slot = 0;
+		chunks[i].cursor_x = 4;  chunks[i].cursor_y = 4;
+		for (int j = 0; j < 4; ++j)
+		{
+			slots[i].min_w[j] = 40.f + (float)(j * 10);
+			slots[i].min_h[j] = 20.f + (float)(j * 5);
+		}
+	}
 
-    Uint64 t0 = SDL_GetPerformanceCounter();
-    wz_layout_chunks(chunks, slots, BENCH_CHUNKS);
-    Uint64 t1 = SDL_GetPerformanceCounter();
-    double ms = (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+	Uint64 t0 = SDL_GetPerformanceCounter();
+	wz_layout_chunks(chunks, slots, BENCH_CHUNKS);
+	Uint64 t1 = SDL_GetPerformanceCounter();
+	double ms = (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
-    // -----------------------------------------------------------------
-    // Draw row backgrounds  (slots[0][0..3])
-    // -----------------------------------------------------------------
-    static const unsigned row_col[4] = {
-        WZ_RGBA(220,  80,  80, 150),   // red    – margins
-        WZ_RGBA( 60, 170,  60, 150),   // green  – max_w
-        WZ_RGBA( 50,  90, 210, 150),   // blue   – cross_align
-        WZ_RGBA(210, 190,  50, 150),   // yellow – shrink
-    };
-    for (int j = 0; j < 4; ++j)
-    {
-        wz_ispc_push_rect(out, &slots[0], j, row_col[j]);
-        SDL_FRect r = { slots[0].abs_x[j], slots[0].abs_y[j],
-                        slots[0].abs_w[j], slots[0].abs_h[j] };
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 200);
-        SDL_RenderRect(renderer, &r);
-    }
+	// -----------------------------------------------------------------
+	// Draw row backgrounds  (slots[0][0..3])
+	// -----------------------------------------------------------------
+	static const unsigned row_col[4] = {
+		WZ_RGBA(220,  80,  80, 150),   // red    – margins
+		WZ_RGBA(60, 170,  60, 150),   // green  – max_w
+		WZ_RGBA(50,  90, 210, 150),   // blue   – cross_align
+		WZ_RGBA(210, 190,  50, 150),   // yellow – shrink
+	};
+	for (int j = 0; j < 4; ++j)
+	{
+		wz_ispc_push_rect(out, &slots[0], j, row_col[j]);
+		SDL_FRect r = { slots[0].abs_x[j], slots[0].abs_y[j],
+						slots[0].abs_w[j], slots[0].abs_h[j] };
+		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 200);
+		SDL_RenderRect(renderer, &r);
+	}
 
-    // -----------------------------------------------------------------
-    // Row 0 (red): MARGINS  – slots[1][0..2]
-    //   Child[1] is lighter; also draw its margin footprint as dim rect.
-    // -----------------------------------------------------------------
-    static const unsigned margin_col[3] = {
-        WZ_RGBA(150, 40, 40, 230), WZ_RGBA(255, 140, 140, 230), WZ_RGBA(150, 40, 40, 230)
-    };
-    for (int j = 0; j < 3; ++j)
-    {
-        wz_ispc_push_rect(out, &slots[1], j, margin_col[j]);
-        SDL_FRect r = { slots[1].abs_x[j], slots[1].abs_y[j],
-                        slots[1].abs_w[j], slots[1].abs_h[j] };
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
-        SDL_RenderRect(renderer, &r);
-    }
-    // Margin footprint of child[1]: the area including its margins
-    {
-        SDL_FRect fp = {
-            slots[1].abs_x[1] - slots[1].margin_l[1],
-            slots[1].abs_y[1],
-            slots[1].abs_w[1] + slots[1].margin_l[1] + slots[1].margin_r[1],
-            slots[1].abs_h[1]
-        };
-        SDL_SetRenderDrawColor(renderer, 255, 220, 100, 120);
-        SDL_RenderRect(renderer, &fp);
-    }
+	// -----------------------------------------------------------------
+	// Row 0 (red): MARGINS  – slots[1][0..2]
+	//   Child[1] is lighter; also draw its margin footprint as dim rect.
+	// -----------------------------------------------------------------
+	static const unsigned margin_col[3] = {
+		WZ_RGBA(150, 40, 40, 230), WZ_RGBA(255, 140, 140, 230), WZ_RGBA(150, 40, 40, 230)
+	};
+	for (int j = 0; j < 3; ++j)
+	{
+		wz_ispc_push_rect(out, &slots[1], j, margin_col[j]);
+		SDL_FRect r = { slots[1].abs_x[j], slots[1].abs_y[j],
+						slots[1].abs_w[j], slots[1].abs_h[j] };
+		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
+		SDL_RenderRect(renderer, &r);
+	}
+	// Margin footprint of child[1]: the area including its margins
+	{
+		SDL_FRect fp = {
+			slots[1].abs_x[1] - slots[1].margin_l[1],
+			slots[1].abs_y[1],
+			slots[1].abs_w[1] + slots[1].margin_l[1] + slots[1].margin_r[1],
+			slots[1].abs_h[1]
+		};
+		SDL_SetRenderDrawColor(renderer, 255, 220, 100, 120);
+		SDL_RenderRect(renderer, &fp);
+	}
 
-    // -----------------------------------------------------------------
-    // Row 1 (green): MAX WIDTH  – slots[2][0..2]
-    //   Child[1] (middle, lighter) is the capped one.
-    // -----------------------------------------------------------------
-    static const unsigned max_col[3] = {
-        WZ_RGBA(30, 130, 30, 230), WZ_RGBA(160, 255, 160, 230), WZ_RGBA(30, 130, 30, 230)
-    };
-    for (int j = 0; j < 3; ++j)
-    {
-        wz_ispc_push_rect(out, &slots[2], j, max_col[j]);
-        SDL_FRect r = { slots[2].abs_x[j], slots[2].abs_y[j],
-                        slots[2].abs_w[j], slots[2].abs_h[j] };
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
-        SDL_RenderRect(renderer, &r);
-    }
+	// -----------------------------------------------------------------
+	// Row 1 (green): MAX WIDTH  – slots[2][0..2]
+	//   Child[1] (middle, lighter) is the capped one.
+	// -----------------------------------------------------------------
+	static const unsigned max_col[3] = {
+		WZ_RGBA(30, 130, 30, 230), WZ_RGBA(160, 255, 160, 230), WZ_RGBA(30, 130, 30, 230)
+	};
+	for (int j = 0; j < 3; ++j)
+	{
+		wz_ispc_push_rect(out, &slots[2], j, max_col[j]);
+		SDL_FRect r = { slots[2].abs_x[j], slots[2].abs_y[j],
+						slots[2].abs_w[j], slots[2].abs_h[j] };
+		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
+		SDL_RenderRect(renderer, &r);
+	}
 
-    // -----------------------------------------------------------------
-    // Row 2 (blue): CROSS-ALIGN  – slots[3][0..3]
-    //   Draw border stripes first, then children.
-    // -----------------------------------------------------------------
-    {
-        float bx = slots[0].abs_x[2], by = slots[0].abs_y[2];
-        float bw = slots[0].abs_w[2], bh = slots[0].abs_h[2];
-        float bl = chunks[3].border_l, br = chunks[3].border_r;
-        float bt = chunks[3].border_t, bb = chunks[3].border_b;
-        unsigned border_color = WZ_RGBA(180, 210, 255, 255);
-        wz_push_filled_rect(out, bx,       by,       bw, bt, border_color);
-        wz_push_filled_rect(out, bx,       by+bh-bb, bw, bb, border_color);
-        wz_push_filled_rect(out, bx,       by,       bl, bh, border_color);
-        wz_push_filled_rect(out, bx+bw-br, by,       br, bh, border_color);
-    }
-    static const unsigned align_col[4] = {
-        WZ_RGBA( 20,  60, 170, 230),   // top
-        WZ_RGBA(100, 160, 255, 230),   // reference (tallest)
-        WZ_RGBA( 20,  60, 170, 230),   // center
-        WZ_RGBA( 20,  60, 170, 230),   // bottom
-    };
-    for (int j = 0; j < 4; ++j)
-    {
-        wz_ispc_push_rect(out, &slots[3], j, align_col[j]);
-        SDL_FRect r = { slots[3].abs_x[j], slots[3].abs_y[j],
-                        slots[3].abs_w[j], slots[3].abs_h[j] };
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
-        SDL_RenderRect(renderer, &r);
-    }
+	// -----------------------------------------------------------------
+	// Row 2 (blue): CROSS-ALIGN  – slots[3][0..3]
+	//   Draw border stripes first, then children.
+	// -----------------------------------------------------------------
+	{
+		float bx = slots[0].abs_x[2], by = slots[0].abs_y[2];
+		float bw = slots[0].abs_w[2], bh = slots[0].abs_h[2];
+		float bl = chunks[3].border_l, br = chunks[3].border_r;
+		float bt = chunks[3].border_t, bb = chunks[3].border_b;
+		unsigned border_color = WZ_RGBA(180, 210, 255, 255);
+		wz_push_filled_rect(out, bx, by, bw, bt, border_color);
+		wz_push_filled_rect(out, bx, by + bh - bb, bw, bb, border_color);
+		wz_push_filled_rect(out, bx, by, bl, bh, border_color);
+		wz_push_filled_rect(out, bx + bw - br, by, br, bh, border_color);
+	}
+	static const unsigned align_col[4] = {
+		WZ_RGBA(20,  60, 170, 230),   // top
+		WZ_RGBA(100, 160, 255, 230),   // reference (tallest)
+		WZ_RGBA(20,  60, 170, 230),   // center
+		WZ_RGBA(20,  60, 170, 230),   // bottom
+	};
+	for (int j = 0; j < 4; ++j)
+	{
+		wz_ispc_push_rect(out, &slots[3], j, align_col[j]);
+		SDL_FRect r = { slots[3].abs_x[j], slots[3].abs_y[j],
+						slots[3].abs_w[j], slots[3].abs_h[j] };
+		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
+		SDL_RenderRect(renderer, &r);
+	}
 
-    // -----------------------------------------------------------------
-    // Row 3 (yellow): SHRINK  – slots[4][0..2]
-    // -----------------------------------------------------------------
-    static const unsigned shrink_col[3] = {
-        WZ_RGBA(170, 150, 20, 230), WZ_RGBA(255, 240, 90, 230), WZ_RGBA(170, 150, 20, 230)
-    };
-    for (int j = 0; j < 3; ++j)
-    {
-        wz_ispc_push_rect(out, &slots[4], j, shrink_col[j]);
-        SDL_FRect r = { slots[4].abs_x[j], slots[4].abs_y[j],
-                        slots[4].abs_w[j], slots[4].abs_h[j] };
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
-        SDL_RenderRect(renderer, &r);
-    }
+	// -----------------------------------------------------------------
+	// Row 3 (yellow): SHRINK  – slots[4][0..2]
+	// -----------------------------------------------------------------
+	static const unsigned shrink_col[3] = {
+		WZ_RGBA(170, 150, 20, 230), WZ_RGBA(255, 240, 90, 230), WZ_RGBA(170, 150, 20, 230)
+	};
+	for (int j = 0; j < 3; ++j)
+	{
+		wz_ispc_push_rect(out, &slots[4], j, shrink_col[j]);
+		SDL_FRect r = { slots[4].abs_x[j], slots[4].abs_y[j],
+						slots[4].abs_w[j], slots[4].abs_h[j] };
+		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
+		SDL_RenderRect(renderer, &r);
+	}
 
-    // -----------------------------------------------------------------
-    // Feature labels
-    // -----------------------------------------------------------------
-    static const char* const labels[4] = {
-        "MARGINS: child[1] has margin_l/r=24 (yellow outline = footprint)",
-        "MAX_W:   child[1] flex=1 but capped at 100px; others expand",
-        "CROSS_ALIGN: [0]=top  [1]=ref  [2]=center  [3]=bottom  (+ 3px border)",
-        "SHRINK_H: row has flex but shrink_h=1 keeps it at content height",
-    };
-    for (int j = 0; j < 4; ++j)
-    {
-        int llen = (int)SDL_strlen(labels[j]);
-        render_text(renderer, &font, labels[j],
-                    (int)slots[0].abs_x[j] + 4,
-                    (int)slots[0].abs_y[j] + 2,
-                    font_height, llen);
-    }
+	// -----------------------------------------------------------------
+	// Feature labels
+	// -----------------------------------------------------------------
+	static const char* const labels[4] = {
+		"MARGINS: child[1] has margin_l/r=24 (yellow outline = footprint)",
+		"MAX_W:   child[1] flex=1 but capped at 100px; others expand",
+		"CROSS_ALIGN: [0]=top  [1]=ref  [2]=center  [3]=bottom  (+ 3px border)",
+		"SHRINK_H: row has flex but shrink_h=1 keeps it at content height",
+	};
+	for (int j = 0; j < 4; ++j)
+	{
+		int llen = (int)SDL_strlen(labels[j]);
+		render_text(renderer, &font, labels[j],
+			(int)slots[0].abs_x[j] + 4,
+			(int)slots[0].abs_y[j] + 2,
+			font_height, llen);
+	}
 
-    // -----------------------------------------------------------------
-    // Timing label (top-right)
-    // -----------------------------------------------------------------
-    char buf[40];
-    int len = SDL_snprintf(buf, sizeof(buf), "ISPC: %.4f ms", ms);
-    float tw = 0, th = 0;
-    get_string_size(buf, 0, len, &tw, &th);
-    wz_push_filled_rect(out, WINDOW_WIDTH - tw - 14, 6, tw + 10, th + 4, WZ_RGBA(0, 0, 0, 160));
-    render_text(renderer, &font, buf, (int)(WINDOW_WIDTH - tw - 9), 8, th, len);
+	// -----------------------------------------------------------------
+	// Timing label (top-right)
+	// -----------------------------------------------------------------
+	char buf[40];
+	int len = SDL_snprintf(buf, sizeof(buf), "ISPC: %.4f ms", ms);
+	float tw = 0, th = 0;
+	get_string_size(buf, 0, len, &tw, &th);
+	wz_push_filled_rect(out, WINDOW_WIDTH - tw - 14, 6, tw + 10, th + 4, WZ_RGBA(0, 0, 0, 160));
+	render_text(renderer, &font, buf, (int)(WINDOW_WIDTH - tw - 9), 8, th, len);
 }
 
 void wz_layout_new()
