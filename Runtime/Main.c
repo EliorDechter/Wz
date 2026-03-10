@@ -1007,10 +1007,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	gui_window.gui.pasted_text = SDL_GetClipboardText();
 	static WzInputState state, state2;
 	WzWidget input_box = wz_text_box(ib_window, &state, WZ_INPUT_NONE, NULL, NULL, NULL);
-	WzWidget input_box2 = wz_text_box(ib_window, &state2, WZ_INPUT_NONE, NULL, NULL, NULL);
+	//WzWidget input_box2 = wz_text_box(ib_window, &state2, WZ_INPUT_NONE, NULL, NULL, NULL);
 
 	static bool b;
-	wz_command_button(wz_str_create("asd"), &b, ib_window);
+	//wz_command_button(wz_str_create("asd"), &b, ib_window);
 
 	WSDL_WzEnd(&gui_window);
 

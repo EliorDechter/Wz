@@ -141,6 +141,7 @@ typedef struct WzInputState
 
 	bool dont_show_cursor;
 	unsigned time_since_blink;
+	unsigned offset_x;
 } WzInputState;
 
 // define all the #defines needed 
@@ -269,7 +270,7 @@ typedef enum ItemType {
 	ItemType_LeftHorizontalDottedLine,
 	ItemType_RightHorizontalDottedLine,
 	ItemType_Line,
-	ItemType_IconClose
+	ItemType_IconClose,
 } ItemType;
 
 typedef struct Line {
