@@ -171,8 +171,10 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 					}
 				}
 
-				wzrd_label_list_sorted(labels, g_game.sorted_entities_count,
-					(int*)g_game.sorted_entities,
+				unsigned ids[3];
+
+				wz_label_list_sorted(labels, g_game.sorted_entities_count,
+					(int*)g_game.sorted_entities, ids,
 					50, 70, 0XC8C8C8FF,
 					&g_game.selected_entity_index_to_sorted_entities,
 					&g_game.is_entity_selected, inner_panel);
@@ -223,7 +225,9 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 					wz_widget_set_expanded(panel);
 
 					WzStr labels[] = { wz_str_create("Entity"), wz_str_create("Texture") };
-					wzrd_label_list(labels, 2,
+					unsigned items[2];
+					unsigned ids[2];
+					wzrd_label_list(labels, 2, items, ids,
 						100, 100,
 						0xFFFFFFFF,
 						0, &selected, &is_selected, panel);
