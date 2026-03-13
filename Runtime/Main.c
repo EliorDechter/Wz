@@ -10,12 +10,29 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 
+#define CONCAT(a, b) a##b
+#define ITEM(name, num) CONCAT(name, num),
 
-enum {
+// These must be hard-coded because the preprocessor can't do "offset + 1"
+#define GEN_2(n, o0, o1)      ITEM(n, o0) ITEM(n, o1)
+#define GEN_4(n, o0, o1, o2, o3) GEN_2(n, o0, o1) GEN_2(n, o2, o3)
+
+// To avoid writing 512 arguments, we use a slightly different "Nested" approach:
+#define B000(n, p) ITEM(n, p##0) ITEM(n, p##1) ITEM(n, p##2) ITEM(n, p##3) ITEM(n, p##4) ITEM(n, p##5) ITEM(n, p##6) ITEM(n, p##7)
+#define B00(n, p)  B000(n, p##0) B000(n, p##1) B000(n, p##2) B000(n, p##3) B000(n, p##4) B000(n, p##5) B000(n, p##6) B000(n, p##7)
+
+// This will generate items 000 through 511 (formatted as 3 digits to avoid math)
+#define GEN_512_SAFE(n) \
+    B00(n, 0) B00(n, 1) B00(n, 2) B00(n, 3) B00(n, 4) B00(n, 5) B00(n, 6) B00(n, 7)
+
+enum
+{
 	WIDGET_INPUT_BOX1,
 	WIDGET_INPUT_BOX2,
 	WIDGET_INPUT_BOX3,
+	GEN_512_SAFE(WIDGET_LABEL_LIST)
 };
+
 
 #define STB_TEXTEDIT_IMPLEMENTATION
 #include "stb_textedit.h"
@@ -1029,7 +1046,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	gui_window.gui.pasted_text = SDL_GetClipboardText();
 	wz_widget_set_size(ib_window, 300, 60);
 	static WzInputState state, state2, s;
-	if (0)
+	if (1)
 	{
 		WzWidget input_box = wz_text_box(ib_window, &state, WZ_INPUT_NONE, NULL, NULL, NULL);
 		WzWidget input_box2 = wz_text_box(ib_window, &s, WZ_INPUT_NONE, NULL, NULL, NULL);
@@ -1056,7 +1073,12 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		static int items[3] = { 0, 1, 2 };
 		static int selected = 0;
 		static bool is_selected;
+
 		static unsigned ids[3] = { 1, 2, 3 };
+		for (unsigned i = 0; i < 3; ++i)
+		{
+			ids[i] = WIDGET_LABEL_LIST000 + i;
+		}
 
 		wz_label_list_sorted(names, 3, &items, ids, 200, 50, WZ_WHITE, &selected, &is_selected, ib_window);
 	}

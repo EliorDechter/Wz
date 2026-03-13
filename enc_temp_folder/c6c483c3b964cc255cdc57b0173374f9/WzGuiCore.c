@@ -1631,7 +1631,8 @@ void wz_draw(WzWidget* boxes_indices)
 		int content_start = buffer->count;
 
 		// Clip content
-		if (widget->clip_content)
+		//if (widget->clip_content)
+		if (0)
 		{
 			WzWidgetData* clip_box = widget;
 
@@ -3644,6 +3645,7 @@ WzWidget wz_text_box_raw(
 	wz_widget_set_pad(widget, 4);
 	wz_widget_set_border(widget, WZ_BORDER_TYPE_TEXT_BOX);
 	
+
 	WzWidgetData* data = wz_widget_get(widget);
 	data->type = WZ_WIDGET_TYPE_INPUT_BOX;
 	data->input_flags = flags;

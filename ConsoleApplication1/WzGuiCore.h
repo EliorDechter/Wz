@@ -93,6 +93,8 @@
 
 #define WZ_LAYOUT_MAX_NUM_SOURCES 8
 
+
+
 // Color Defines (RGBA format: 0xRRGGBBAA)
 #define WZ_DEFAULT_COLOR 0xc0c0c0ff
 #define WZ_LIGHTGRAY 0xc8c8c8ff      // Light Gray
@@ -474,6 +476,8 @@ typedef struct
 	unsigned input_flags;
 	bool* input_committed;
 	WzInputState* input_state;
+
+	bool clip_content;
 
 	// State
 	bool* released;
