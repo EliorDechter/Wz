@@ -1,4 +1,4 @@
-# WzGui
+# WzGui 🧙
 
 A lightweight immediate-mode GUI library written in pure C. Built for real-time applications and game tooling — no heap allocations per frame, no retained widget trees, no C++ required.
 
@@ -17,28 +17,28 @@ if (save) write_to_disk(name_input.buffer);
 
 ---
 
-## Why WzGui?
+## 🤔 Why WzGui?
 
 Most immediate-mode GUIs in C are either toy projects or require C++. WzGui is built for production use inside a game editor, with a full layout engine, multi-font text rendering, and a platform-agnostic draw command system that works with any renderer.
 
 ---
 
-## Features
+## ✨ Features
 
-- **Immediate-mode** — rebuild the entire UI every frame, no retained state to sync
-- **Flex layout** — horizontal/vertical boxes, stretch factors, constraints, padding, margins, gaps
-- **Rich text editing** — cursor, selection, undo/redo, word navigation, horizontal scroll, placeholder text
-- **Multi-font** — assign any font and size per widget, measured via a user-provided callback
-- **Input filters** — built-in filters for decimal, float, hex, alpha, alphanumeric input
-- **Widget states** — `ACTIVATING` / `ACTIVE` / `DEACTIVATING` / `INACTIVE` for precise interaction control
-- **Keyboard state** — query any ASCII key's state (pressed, held, released) each frame
-- **Clipping** — clip widget content to its bounds; children inherit the clip region
-- **Draw command buffer** — rendering is fully decoupled; supply your own SDL/OpenGL/etc. backend
-- **No C++ required** — pure C99
+- ⚡ **Immediate-mode** — rebuild the entire UI every frame, no retained state to sync
+- 📐 **Flex layout** — horizontal/vertical boxes, stretch factors, constraints, padding, margins, gaps
+- ✏️ **Rich text editing** — cursor, selection, undo/redo, word navigation, horizontal scroll, placeholder text
+- 🔤 **Multi-font** — assign any font and size per widget, measured via a user-provided callback
+- 🔢 **Input filters** — built-in filters for decimal, float, hex, alpha, alphanumeric input
+- 🎯 **Widget states** — `ACTIVATING` / `ACTIVE` / `DEACTIVATING` / `INACTIVE` for precise interaction control
+- ⌨️ **Keyboard state** — query any ASCII key's state (pressed, held, released) each frame
+- ✂️ **Clipping** — clip widget content to its bounds; children inherit the clip region
+- 🎨 **Draw command buffer** — rendering is fully decoupled; supply your own SDL/OpenGL/etc. backend
+- 🧱 **No C++ required** — pure C99
 
 ---
 
-## Widgets
+## 🧩 Widgets
 
 | Widget | Description |
 |---|---|
@@ -57,7 +57,7 @@ Most immediate-mode GUIs in C are either toy projects or require C++. WzGui is b
 
 ---
 
-## Layout
+## 📐 Layout
 
 WzGui uses a flex-style layout system. Widgets stack along a main axis, with optional stretching, alignment, and spacing.
 
@@ -88,7 +88,7 @@ wz_widget_set_cross_axis_alignment(w, alignment);
 
 ---
 
-## Text Boxes
+## ✏️ Text Boxes
 
 ```c
 static WzInputState state;
@@ -121,7 +121,7 @@ wz_filter_alpha         // letters only
 wz_filter_alphanumeric  // letters and digits
 ```
 
-**Keyboard shortcuts (always active):**
+**⌨️ Keyboard shortcuts (always active):**
 
 | Shortcut | Action |
 |---|---|
@@ -136,7 +136,7 @@ wz_filter_alphanumeric  // letters and digits
 
 ---
 
-## Widget States
+## 🎯 Widget States
 
 ```c
 if (wz_widget_is_activating(widget))   { /* pressed this frame */ }
@@ -148,7 +148,7 @@ if (wz_widget_is_focused(widget))      { /* has keyboard focus */ }
 
 ---
 
-## Keyboard State
+## ⌨️ Keyboard State
 
 Query any ASCII key's state directly each frame:
 
@@ -162,7 +162,7 @@ States: `WZ_INACTIVE`, `WZ_ACTIVATING`, `WZ_ACTIVE`, `WZ_DEACTIVATING`
 
 ---
 
-## Multi-Font
+## 🔤 Multi-Font
 
 Provide a measurement callback and assign fonts per widget:
 
@@ -180,7 +180,7 @@ Font IDs are plain integers — WzGui does not manage font loading, giving you f
 
 ---
 
-## Rendering
+## 🎨 Rendering
 
 WzGui produces a `WzDrawCommandBuffer` each frame. Feed it to any renderer:
 
@@ -203,7 +203,7 @@ for (int i = 0; i < cmds->count; i++) {
 
 ---
 
-## Dependencies
+## 📦 Dependencies
 
 - [stb_truetype](https://github.com/nothings/stb) — font rasterization
 - [stb_textedit](https://github.com/nothings/stb) — text editing backend
@@ -211,6 +211,6 @@ for (int i = 0; i < cmds->count; i++) {
 
 ---
 
-## License
+## 📄 License
 
 MIT
