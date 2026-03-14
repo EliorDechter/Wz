@@ -227,10 +227,12 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 					WzStr labels[] = { wz_str_create("Entity"), wz_str_create("Texture") };
 					unsigned items[2];
 					unsigned ids[2];
+#if 0
 					wzrd_label_list(labels, 2, items, ids,
 						100, 100,
 						0xFFFFFFFF,
 						0, &selected, &is_selected, panel);
+#endif
 					WzWidget form = wz_vpanel(panel);
 					wz_widget_set_expanded(form);
 					wz_widget_set_cross_axis_alignment(form, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);

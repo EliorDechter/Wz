@@ -7,16 +7,6 @@
 #pragma once
 #include <stdint.h>
 
-#if !defined(__cplusplus)
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
-#include <stdbool.h>
-#else
-#include <stdbool.h>
-//typedef int bool;
-#endif
-#endif
-
-
 
 #ifdef __cplusplus
 namespace ispc { /* namespace */
@@ -54,44 +44,51 @@ struct WzChunk {
     float pad_right;
     float pad_top;
     float pad_bottom;
-    float border_l;
-    float border_r;
-    float border_t;
-    float border_b;
+    float border_left;
+    float border_right;
+    float border_top;
+    float border_bottom;
     float child_gap;
-    float min_w;
-    float min_h;
+    float min_width;
+    float min_height;
     float flex_total;
-    float inner_w;
-    float inner_h;
+    float inner_width;
+    float inner_height;
     float cursor_x;
     float cursor_y;
-    int32_t shrink_w;
-    int32_t shrink_h;
+    int32_t shrink_width;
+    int32_t shrink_height;
     uint32_t child_count;
-    uint32_t par_chunk;
-    uint32_t par_slot;
-    int32_t is_horiz;
+    uint32_t parent_chunk;
+    uint32_t parent_slot;
+    int32_t is_horizontal;
+    float total_children_min_width;
+    float total_children_min_height;
+    float w_per_flex_cache;
+    float h_per_flex_cache;
+    int32_t total_child_count;
+    int32_t is_continuation;
+    int32_t overflow_group_head;
 };
 #endif
 
 #ifndef __ISPC_STRUCT_WzSlot__
 #define __ISPC_STRUCT_WzSlot__
 struct WzSlot {
-    float min_w[8];
-    float min_h[8];
+    float min_width[8];
+    float min_height[8];
     float flex[8];
-    float margin_l[8];
-    float margin_r[8];
-    float margin_t[8];
-    float margin_b[8];
-    float max_w[8];
-    float max_h[8];
+    float margin_left[8];
+    float margin_right[8];
+    float margin_top[8];
+    float margin_bottom[8];
+    float max_width[8];
+    float max_height[8];
     float cross_align[8];
-    float avail_w[8];
-    float avail_h[8];
-    float abs_w[8];
-    float abs_h[8];
+    float avail_width[8];
+    float avail_height[8];
+    float abs_width[8];
+    float abs_height[8];
     float abs_x[8];
     float abs_y[8];
 };

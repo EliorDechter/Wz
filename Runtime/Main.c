@@ -326,7 +326,7 @@ static void wz_push_filled_rect(WzDrawCommandBuffer* buf, float x, float y, floa
 
 static void wz_ispc_push_rect(WzDrawCommandBuffer* buf, const struct WzSlot* slot, int lane, unsigned color)
 {
-	wz_push_filled_rect(buf, slot->abs_x[lane], slot->abs_y[lane], slot->abs_w[lane], slot->abs_h[lane], color);
+	wz_push_filled_rect(buf, slot->abs_x[lane], slot->abs_y[lane], slot->abs_width[lane], slot->abs_height[lane], color);
 }
 
 //#define assert(x) void(x)
@@ -1048,10 +1048,23 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	static WzInputState state, state2, s;
 	if (1)
 	{
+#if 0
 		WzWidget input_box = wz_text_box(ib_window, &state, WZ_INPUT_NONE, NULL, NULL, NULL);
 		WzWidget input_box2 = wz_text_box(ib_window, &s, WZ_INPUT_NONE, NULL, NULL, NULL);
 		WzWidget input_box3 = wz_text_box(ib_window, &state2, WZ_INPUT_NONE, NULL, NULL, NULL);
 		wz_widget_set_font(input_box2, 1);
+
+		static float pos;
+		wz_slider(ib_window, 200, &pos);
+#endif
+		//bool b;
+		//wz_command_button(wz_str_create("wow"), &b, ib_window);
+
+		static unsigned selected_text;
+		WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
+		static bool active = true;
+		unsigned items[] = { 0, 1, 2 };
+		wz_dropdown(ib_window, &selected_text, strs, 3, 70, &active);
 	}
 
 	if (0)
@@ -1080,7 +1093,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 			ids[i] = WIDGET_LABEL_LIST000 + i;
 		}
 
-		wz_label_list_sorted(names, 3, &items, ids, 200, 50, WZ_WHITE, &selected, &is_selected, ib_window);
+		//wz_label_list_sorted(names, 3, &items, ids, 200, 50, WZ_WHITE, &selected, &is_selected, ib_window);
 	}
 
 	static bool b;
@@ -1154,16 +1167,16 @@ static void wz_layout_ispc_test(void)
 	chunks[0].pad_top = 10;
 	chunks[0].pad_bottom = 10;
 	chunks[0].child_gap = 5;
-	chunks[0].is_horiz = 0;
+	chunks[0].is_horizontal = 0;
 	chunks[0].child_count = 3;
-	chunks[0].par_chunk = 0;
-	chunks[0].par_slot = 0;
+	chunks[0].parent_chunk = 0;
+	chunks[0].parent_slot = 0;
 	chunks[0].cursor_x = chunks[0].pad_left;
 	chunks[0].cursor_y = chunks[0].pad_top;
 
 	// root available space = window size (written into slot 0 of chunk 0)
-	slots[0].avail_w[0] = 800;
-	slots[0].avail_h[0] = 600;
+	slots[0].avail_width[0] = 800;
+	slots[0].avail_height[0] = 600;
 
 	// ---- chunk 1: three children of root ----
 	chunks[1].pad_left = 0;
@@ -1171,16 +1184,16 @@ static void wz_layout_ispc_test(void)
 	chunks[1].pad_top = 0;
 	chunks[1].pad_bottom = 0;
 	chunks[1].child_gap = 0;
-	chunks[1].is_horiz = 0;   // vertical
+	chunks[1].is_horizontal = 0;   // vertical
 	chunks[1].child_count = 3;
-	chunks[1].par_chunk = 0;
-	chunks[1].par_slot = 0;
+	chunks[1].parent_chunk = 0;
+	chunks[1].parent_slot = 0;
 	chunks[1].cursor_x = 0;
 	chunks[1].cursor_y = 0;
 
-	slots[1].min_w[0] = 200;  slots[1].min_h[0] = 30;  slots[1].flex[0] = 0;
-	slots[1].min_w[1] = 200;  slots[1].min_h[1] = 0;   slots[1].flex[1] = 1;
-	slots[1].min_w[2] = 200;  slots[1].min_h[2] = 40;  slots[1].flex[2] = 0;
+	slots[1].min_width[0] = 200;  slots[1].min_height[0] = 30;  slots[1].flex[0] = 0;
+	slots[1].min_width[1] = 200;  slots[1].min_height[1] = 0;   slots[1].flex[1] = 1;
+	slots[1].min_width[2] = 200;  slots[1].min_height[2] = 40;  slots[1].flex[2] = 0;
 
 	wz_layout_chunks(chunks, slots, 2);
 
@@ -1189,8 +1202,8 @@ static void wz_layout_ispc_test(void)
 	{
 		for (int slot = 0; slot < TEST_CHUNK_SIZE; ++slot)
 		{
-			float w = slots[chunk].abs_w[slot];
-			float h = slots[chunk].abs_h[slot];
+			float w = slots[chunk].abs_width[slot];
+			float h = slots[chunk].abs_height[slot];
 			if (w == 0.f && h == 0.f) continue;
 
 			SDL_Log("  chunk %d  slot %d :  x=%.0f  y=%.0f  w=%.0f  h=%.0f",
@@ -1229,11 +1242,11 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	chunks[0].pad_top = 16; chunks[0].pad_bottom = 16;
 	chunks[0].child_gap = 12;
 	chunks[0].child_count = 4;
-	chunks[0].is_horiz = 0;
-	chunks[0].par_chunk = 0;  chunks[0].par_slot = 0;
+	chunks[0].is_horizontal = 0;
+	chunks[0].parent_chunk = 0;  chunks[0].parent_slot = 0;
 	chunks[0].cursor_x = 16; chunks[0].cursor_y = 16;
-	slots[0].avail_w[0] = WINDOW_WIDTH;
-	slots[0].avail_h[0] = WINDOW_HEIGHT;
+	slots[0].avail_width[0] = WINDOW_WIDTH;
+	slots[0].avail_height[0] = WINDOW_HEIGHT;
 	// flex[3]=3 matches chunks[0].flex_total (accumulated from chunk 2's 3 flex children),
 	// so the yellow shrink row receives ALL remaining window height — then shrink_h clamps it.
 	slots[0].flex[3] = 3;
@@ -1247,13 +1260,13 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	chunks[1].pad_top = 8;  chunks[1].pad_bottom = 8;
 	chunks[1].child_gap = 8;
 	chunks[1].child_count = 3;
-	chunks[1].is_horiz = 1;
-	chunks[1].par_chunk = 0;  chunks[1].par_slot = 0;
+	chunks[1].is_horizontal = 1;
+	chunks[1].parent_chunk = 0;  chunks[1].parent_slot = 0;
 	chunks[1].cursor_x = 8;  chunks[1].cursor_y = 8;
-	slots[1].min_w[0] = 100;  slots[1].min_h[0] = 50;
-	slots[1].min_w[1] = 100;  slots[1].min_h[1] = 50;
-	slots[1].margin_l[1] = 24; slots[1].margin_r[1] = 24; // <-- margins
-	slots[1].min_w[2] = 100;  slots[1].min_h[2] = 50;
+	slots[1].min_width[0] = 100;  slots[1].min_height[0] = 50;
+	slots[1].min_width[1] = 100;  slots[1].min_height[1] = 50;
+	slots[1].margin_left[1] = 24; slots[1].margin_right[1] = 24; // <-- margins
+	slots[1].min_width[2] = 100;  slots[1].min_height[2] = 50;
 
 	// -----------------------------------------------------------------
 	// Chunk 2: MAX WIDTH demo  (green row)
@@ -1263,13 +1276,13 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	chunks[2].pad_top = 8;  chunks[2].pad_bottom = 8;
 	chunks[2].child_gap = 8;
 	chunks[2].child_count = 3;
-	chunks[2].is_horiz = 1;
-	chunks[2].par_chunk = 0;  chunks[2].par_slot = 1;
+	chunks[2].is_horizontal = 1;
+	chunks[2].parent_chunk = 0;  chunks[2].parent_slot = 1;
 	chunks[2].cursor_x = 8;  chunks[2].cursor_y = 8;
-	slots[2].min_w[0] = 60;  slots[2].min_h[0] = 50;  slots[2].flex[0] = 1;
-	slots[2].min_w[1] = 60;  slots[2].min_h[1] = 50;  slots[2].flex[1] = 1;
-	slots[2].max_w[1] = 100; // <-- max width cap
-	slots[2].min_w[2] = 60;  slots[2].min_h[2] = 50;  slots[2].flex[2] = 1;
+	slots[2].min_width[0] = 60;  slots[2].min_height[0] = 50;  slots[2].flex[0] = 1;
+	slots[2].min_width[1] = 60;  slots[2].min_height[1] = 50;  slots[2].flex[1] = 1;
+	slots[2].max_width[1] = 100; // <-- max width cap
+	slots[2].min_width[2] = 60;  slots[2].min_height[2] = 50;  slots[2].flex[2] = 1;
 
 	// -----------------------------------------------------------------
 	// Chunk 3: CROSS-AXIS ALIGNMENT demo  (blue row)  + visible border
@@ -1281,18 +1294,18 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	// -----------------------------------------------------------------
 	chunks[3].pad_left = 8;  chunks[3].pad_right = 8;
 	chunks[3].pad_top = 8;  chunks[3].pad_bottom = 8;
-	chunks[3].border_l = 3;  chunks[3].border_r = 3;
-	chunks[3].border_t = 3;  chunks[3].border_b = 3;
+	chunks[3].border_left = 3;  chunks[3].border_right = 3;
+	chunks[3].border_top = 3;  chunks[3].border_bottom = 3;
 	chunks[3].child_gap = 8;
 	chunks[3].child_count = 4;
-	chunks[3].is_horiz = 1;
-	chunks[3].par_chunk = 0;  chunks[3].par_slot = 2;
+	chunks[3].is_horizontal = 1;
+	chunks[3].parent_chunk = 0;  chunks[3].parent_slot = 2;
 	chunks[3].cursor_x = 8 + 3;  // pad + border
 	chunks[3].cursor_y = 8 + 3;
-	slots[3].min_w[0] = 90;  slots[3].min_h[0] = 40;  slots[3].cross_align[0] = 0.0f;
-	slots[3].min_w[1] = 90;  slots[3].min_h[1] = 90;  slots[3].cross_align[1] = 0.0f; // ref
-	slots[3].min_w[2] = 90;  slots[3].min_h[2] = 40;  slots[3].cross_align[2] = 0.5f;
-	slots[3].min_w[3] = 90;  slots[3].min_h[3] = 40;  slots[3].cross_align[3] = 1.0f;
+	slots[3].min_width[0] = 90;  slots[3].min_height[0] = 40;  slots[3].cross_align[0] = 0.0f;
+	slots[3].min_width[1] = 90;  slots[3].min_height[1] = 90;  slots[3].cross_align[1] = 0.0f; // ref
+	slots[3].min_width[2] = 90;  slots[3].min_height[2] = 40;  slots[3].cross_align[2] = 0.5f;
+	slots[3].min_width[3] = 90;  slots[3].min_height[3] = 40;  slots[3].cross_align[3] = 1.0f;
 
 	// -----------------------------------------------------------------
 	// Chunk 4: SHRINK-TO-HEIGHT demo  (yellow row)
@@ -1304,28 +1317,28 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	chunks[4].pad_top = 8;  chunks[4].pad_bottom = 8;
 	chunks[4].child_gap = 8;
 	chunks[4].child_count = 3;
-	chunks[4].is_horiz = 1;
-	chunks[4].par_chunk = 0;  chunks[4].par_slot = 3;
+	chunks[4].is_horizontal = 1;
+	chunks[4].parent_chunk = 0;  chunks[4].parent_slot = 3;
 	chunks[4].cursor_x = 8;  chunks[4].cursor_y = 8;
-	chunks[4].shrink_h = 1;  // <-- shrink
-	slots[4].min_w[0] = 80;  slots[4].min_h[0] = 50;
-	slots[4].min_w[1] = 80;  slots[4].min_h[1] = 50;
-	slots[4].min_w[2] = 80;  slots[4].min_h[2] = 50;
+	chunks[4].shrink_height = 1;  // <-- shrink
+	slots[4].min_width[0] = 80;  slots[4].min_height[0] = 50;
+	slots[4].min_width[1] = 80;  slots[4].min_height[1] = 50;
+	slots[4].min_width[2] = 80;  slots[4].min_height[2] = 50;
 
 	// Benchmark chunks: self-referential so Pass 1 writes into own slots only
 	for (int i = 5; i < BENCH_CHUNKS; ++i)
 	{
 		chunks[i].pad_left = 4;  chunks[i].pad_right = 4;
 		chunks[i].child_gap = 2;
-		chunks[i].is_horiz = i % 2;
+		chunks[i].is_horizontal = i % 2;
 		chunks[i].child_count = 4;
-		chunks[i].par_chunk = i;
-		chunks[i].par_slot = 0;
+		chunks[i].parent_chunk = i;
+		chunks[i].parent_slot = 0;
 		chunks[i].cursor_x = 4;  chunks[i].cursor_y = 4;
 		for (int j = 0; j < 4; ++j)
 		{
-			slots[i].min_w[j] = 40.f + (float)(j * 10);
-			slots[i].min_h[j] = 20.f + (float)(j * 5);
+			slots[i].min_width[j] = 40.f + (float)(j * 10);
+			slots[i].min_height[j] = 20.f + (float)(j * 5);
 		}
 	}
 
@@ -1349,7 +1362,7 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	{
 		wz_ispc_push_rect(out, &slots[0], j, row_col[j]);
 		SDL_FRect r = { slots[0].abs_x[j], slots[0].abs_y[j],
-						slots[0].abs_w[j], slots[0].abs_h[j] };
+						slots[0].abs_width[j], slots[0].abs_height[j] };
 		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 200);
 		SDL_RenderRect(renderer, &r);
 	}
@@ -1365,17 +1378,17 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	{
 		wz_ispc_push_rect(out, &slots[1], j, margin_col[j]);
 		SDL_FRect r = { slots[1].abs_x[j], slots[1].abs_y[j],
-						slots[1].abs_w[j], slots[1].abs_h[j] };
+						slots[1].abs_width[j], slots[1].abs_height[j] };
 		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
 		SDL_RenderRect(renderer, &r);
 	}
 	// Margin footprint of child[1]: the area including its margins
 	{
 		SDL_FRect fp = {
-			slots[1].abs_x[1] - slots[1].margin_l[1],
+			slots[1].abs_x[1] - slots[1].margin_left[1],
 			slots[1].abs_y[1],
-			slots[1].abs_w[1] + slots[1].margin_l[1] + slots[1].margin_r[1],
-			slots[1].abs_h[1]
+			slots[1].abs_width[1] + slots[1].margin_left[1] + slots[1].margin_right[1],
+			slots[1].abs_height[1]
 		};
 		SDL_SetRenderDrawColor(renderer, 255, 220, 100, 120);
 		SDL_RenderRect(renderer, &fp);
@@ -1392,7 +1405,7 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	{
 		wz_ispc_push_rect(out, &slots[2], j, max_col[j]);
 		SDL_FRect r = { slots[2].abs_x[j], slots[2].abs_y[j],
-						slots[2].abs_w[j], slots[2].abs_h[j] };
+						slots[2].abs_width[j], slots[2].abs_height[j] };
 		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
 		SDL_RenderRect(renderer, &r);
 	}
@@ -1403,9 +1416,9 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	// -----------------------------------------------------------------
 	{
 		float bx = slots[0].abs_x[2], by = slots[0].abs_y[2];
-		float bw = slots[0].abs_w[2], bh = slots[0].abs_h[2];
-		float bl = chunks[3].border_l, br = chunks[3].border_r;
-		float bt = chunks[3].border_t, bb = chunks[3].border_b;
+		float bw = slots[0].abs_width[2], bh = slots[0].abs_height[2];
+		float bl = chunks[3].border_left, br = chunks[3].border_right;
+		float bt = chunks[3].border_top, bb = chunks[3].border_bottom;
 		unsigned border_color = WZ_RGBA(180, 210, 255, 255);
 		wz_push_filled_rect(out, bx, by, bw, bt, border_color);
 		wz_push_filled_rect(out, bx, by + bh - bb, bw, bb, border_color);
@@ -1422,7 +1435,7 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	{
 		wz_ispc_push_rect(out, &slots[3], j, align_col[j]);
 		SDL_FRect r = { slots[3].abs_x[j], slots[3].abs_y[j],
-						slots[3].abs_w[j], slots[3].abs_h[j] };
+						slots[3].abs_width[j], slots[3].abs_height[j] };
 		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
 		SDL_RenderRect(renderer, &r);
 	}
@@ -1437,7 +1450,7 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	{
 		wz_ispc_push_rect(out, &slots[4], j, shrink_col[j]);
 		SDL_FRect r = { slots[4].abs_x[j], slots[4].abs_y[j],
-						slots[4].abs_w[j], slots[4].abs_h[j] };
+						slots[4].abs_width[j], slots[4].abs_height[j] };
 		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 160);
 		SDL_RenderRect(renderer, &r);
 	}

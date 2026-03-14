@@ -152,6 +152,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Main.c" />
+    <ClCompile Include="..\ConsoleApplication1\WzLayoutScalar.c" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\Desktop\SDL-release-3.2.26\VisualC\SDL\SDL.vcxproj">
@@ -173,11 +174,11 @@
   <ItemGroup>
     <CustomBuild Include="..\ConsoleApplication1\WzLayout.ispc">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -g -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(OutDir)WzLayout.obj</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(OutDir)WzLayout.obj</Outputs>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -g -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)WzLayout.obj</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">ispc.exe %(FullPath) --target=avx2-i32x8 --arch=x86-64 -o $(OutDir)WzLayout.obj --header-outfile=$(ProjectDir)WzLayout_ispc.h</Command>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)WzLayout.obj</Outputs>

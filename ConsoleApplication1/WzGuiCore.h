@@ -319,6 +319,7 @@ enum
 	WZ_WIDGET_TYPE_COMMAND_NONE,
 	WZ_WIDGET_TYPE_COMMAND_BUTTON,
 	WZ_WIDGET_TYPE_INPUT_BOX,
+	WZ_WIDGET_TYPE_SLIDER
 };
 
 typedef struct wzrd_handle
@@ -481,6 +482,10 @@ typedef struct
 
 	// State
 	bool* released;
+	WzWidget slider;
+	float* slider_pos;
+
+	bool is_horizontal;
 } WzWidgetData;
 
 typedef struct WzScene
@@ -521,12 +526,6 @@ typedef enum wzrd_cursor {
 	wzrd_cursor_vertical_arrow,
 	wzrd_cursor_horizontal_arrow
 } wzrd_cursor;
-
-typedef struct wzrd_stylesheet
-{
-	unsigned int label_color;
-	unsigned int label_item_selected_color;
-} wzrd_stylesheet;
 
 typedef void (*ScrollbarCallback)(WzWidget, WzWidget, WzWidget);
 
@@ -660,7 +659,6 @@ typedef struct WzGui
 	WzWidgetData cached_boxes[MAX_NUM_WIDGETS];
 	int cached_boxes_count;
 
-	wzrd_stylesheet stylesheet;
 
 	WzRect* rects; // aka Final Layout
 
@@ -833,6 +831,7 @@ WzWidget wz_begin(
 	unsigned events_count,
 	bool enable_input);
 void wz_spacer(WzWidget parent);
+void wz_slider(WzWidget parent, unsigned width, float* pos);
 void wz_widget_scale(WzWidget widget, float w, float h);
 void wz_widget_rotate(WzWidget widget, float rotation);
 void wz_end();
@@ -913,12 +912,15 @@ WzWidget wz_button_icon_raw(WzWidget parent, bool* result, WzTexture texture, co
 WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
 WzWidget wz_command_button_raw(WzStr str, bool* b, WzWidget parent, const char* file, unsigned int line);
 void wz_command_button_run(WzWidget button, bool* released);
-WzWidget wzrd_dropdown_raw(int* selected_text, const WzStr* texts, int texts_count, int w, bool* active, WzWidget parent, const char* file, unsigned int line);
+WzWidget wz_dropdown(WzWidget parent, unsigned* selected_text,
+	const WzStr* texts, int texts_count, int w, bool* active);
 WzWidget wz_dialog_raw(int* x, int* y, unsigned* w, unsigned* h, bool* active, WzStr name, int layer, WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active, const char* file, unsigned int line);
 WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, bool* active, const char* file, unsigned int line);
 void wz_label_list_sorted_raw(WzStr* item_names, unsigned int count, unsigned* items, unsigned *ids, unsigned int width, unsigned int height, unsigned int color, unsigned int* selected, bool* is_selected, WzWidget parent, const char* file, unsigned int line);
-void wzrd_label_list_raw(WzStr* item_names, unsigned int count, unsigned *items, unsigned *unique_ids, unsigned int width, unsigned int height, unsigned int color, WzWidget* handles, unsigned int* selected, bool* is_selected, WzWidget parent, const char* file, unsigned int line);
+void wzrd_label_list_raw(WzWidget parent, WzStr* item_names, unsigned int count, unsigned *items,
+	unsigned *unique_ids, unsigned int width, unsigned int height, unsigned int color,
+	WzWidget* handles, unsigned int* selected, bool* is_selected, const char* file, unsigned int line);
 // Flags for wz_input_box
 #define WZ_INPUT_NONE        0
 #define WZ_INPUT_AUTO_SELECT (1 << 0)   // select all text when focused
@@ -990,7 +992,7 @@ WzWidget wz_scene(WzScene scene, WzWidget parent, WzTexture texture, int x, int 
 #define wz_command_toggle(parent, str, active) wz_command_toggle_raw(parent, str, active, __FILE__, __LINE__)
 #define wz_icon_toggle(parent, texture, w, h, active) wz_icon_toggle_raw(parent, texture, w, h, active, __FILE__, __LINE__)
 #define wz_label_list_sorted(item_names, count, items, ids, width, height, color, selected, is_selected, parent) wz_label_list_sorted_raw(item_names, count, items, ids, width, height, color, selected, is_selected, parent, __FILE__, __LINE__)
-#define wzrd_label_list(item_names, count, items, ids, width, height, color, handles, selected, is_selected, parent) wzrd_label_list_raw(item_names, count, items, ids, width, height, color, handles, selected, is_selected, parent, __FILE__, __LINE__)
+#define wzrd_label_list(parent, item_names, count, items, ids, width, height, color, handles, selected, is_selected) wzrd_label_list_raw(parent, item_names, count, items, ids, width, height, color, handles, selected, is_selected, __FILE__, __LINE__)
 #define wzrd_handle_button(active, rect, color, name, parent) wzrd_handle_button_raw(active, rect, color, name, parent, __FILE__, __LINE__)
 #define wzrd_vbox_border(size, parent) wzrd_vbox_border_raw(size, parent, __FILE__, __LINE__)
 #define wz_hbox(parent) wz_hbox_raw(parent,  __FILE__, __LINE__)

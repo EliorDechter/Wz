@@ -75,6 +75,9 @@
     <ClCompile Include="ArrayList.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="WzLayoutScalar.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Platform.h">
