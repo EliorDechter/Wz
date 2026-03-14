@@ -59,7 +59,6 @@ void wz_widget_set_pad(WzWidget widget, unsigned pad)
 
 void wz_widget_set_margin_left(WzWidget widget, unsigned int pad)
 {
-
 	wz_widget_get(widget)->margin_left = pad;
 }
 
@@ -684,6 +683,8 @@ WzWidget wz_widget_raw(WzWidget parent, const char* file, unsigned int line)
 	WzWidgetData box = wz_widget_create(parent);
 	WzWidget widget = wz_widget_add_to_frame(parent, box);
 	wz_widget_add_source(widget, file, line);
+
+	wz->widgets_count++;
 
 	return widget;
 }
@@ -2955,7 +2956,9 @@ void wz_tree_node_get_children(WzTree* tree, WzTreeNode node, WzTreeNodeData** c
 	*children_count = tree->children_count;
 }
 
-void wz_do_layout_refactor_me()
+#if 0
+
+void wz_do_layout_refactor_me(int from, int to)
 {
 	static struct WzChunk chunks[MAX_NUM_WIDGETS];
 	static struct WzSlot  slots[MAX_NUM_WIDGETS];
@@ -2968,51 +2971,52 @@ void wz_do_layout_refactor_me()
 
 	memset(chunks, 0, sizeof(chunks));
 	memset(slots, 0, sizeof(slots));
+
 	for (int i = 0; i < MAX_NUM_WIDGETS; ++i)
 	{
 		widget_to_chunk[i] = -1;
 		overflow_prev[i] = -1;
 	}
 
-	int queue[MAX_NUM_WIDGETS];
-	int qhead = 0, qtail = 0;
+	int stack[MAX_NUM_WIDGETS];
+	int stack_head = 0, stack_tail = 0;
 	int num_chunks = 0;
 
-	widget_to_chunk[1] = 0;
+	widget_to_chunk[from] = 0;
 	chunk_parent_chunk[0] = 0;
 	chunk_parent_lane[0] = 0;
 	slots[0].avail_width[0] = wz->window.w;
 	slots[0].avail_height[0] = wz->window.h;
 	num_chunks = 1;
-	queue[qtail++] = 1;
+	stack[stack_tail++] = from;
 
-	while (qhead < qtail)
+	while (stack_head < stack_tail)
 	{
-		int whandle = queue[qhead++];
-		WzWidgetData* widget = &wz->widgets[whandle];
-		int k = widget_to_chunk[whandle];
+		unsigned widget = stack[stack_head++];
+		WzWidgetData* widget_data = &wz->widgets[widget];
+		int k = widget_to_chunk[widget];
 		int head_k = k;
 
-		chunks[k].pad_left = (float)widget->pad_left;
-		chunks[k].pad_right = (float)widget->pad_right;
-		chunks[k].pad_top = (float)widget->pad_top;
-		chunks[k].pad_bottom = (float)widget->pad_bottom;
-		chunks[k].child_gap = (float)widget->child_gap;
-		chunks[k].is_horizontal = widget->is_horizontal;
-		chunks[k].cursor_x = (float)widget->pad_left;
-		chunks[k].cursor_y = (float)widget->pad_top;
+		chunks[k].pad_left = (float)widget_data->pad_left;
+		chunks[k].pad_right = (float)widget_data->pad_right;
+		chunks[k].pad_top = (float)widget_data->pad_top;
+		chunks[k].pad_bottom = (float)widget_data->pad_bottom;
+		chunks[k].child_gap = (float)widget_data->child_gap;
+		chunks[k].is_horizontal = widget_data->is_horizontal;
+		chunks[k].cursor_x = (float)widget_data->pad_left;
+		chunks[k].cursor_y = (float)widget_data->pad_top;
 		chunks[k].parent_chunk = chunk_parent_chunk[k];
 		chunks[k].parent_slot = chunk_parent_lane[k];
-		chunks[k].shrink_width = widget->fit_w;
-		chunks[k].shrink_height = widget->fit_h;
+		chunks[k].shrink_width = widget_data->fit_w;
+		chunks[k].shrink_height = widget_data->fit_h;
 
 		int lane = 0;
 		int non_free_count = 0;
 		float total_min_w = 0.f, total_min_h = 0.f;
 
-		for (int ci = 0; ci < widget->children_count; ++ci)
+		for (int ci = 0; ci < widget_data->children_count; ++ci)
 		{
-			int chandle = widget->children[ci].handle;
+			int chandle = widget_data->children[ci].handle;
 			WzWidgetData* child = &wz->widgets[chandle];
 			if (child->free_from_parent) continue;
 
@@ -3056,7 +3060,7 @@ void wz_do_layout_refactor_me()
 				widget_to_chunk[chandle] = k_child;
 				chunk_parent_chunk[k_child] = k;
 				chunk_parent_lane[k_child] = lane;
-				queue[qtail++] = chandle;
+				stack[stack_tail++] = chandle;
 			}
 			++lane;
 		}
@@ -3094,14 +3098,14 @@ void wz_do_layout_refactor_me()
 	}
 
 	// Apply actual sizes
+	// Iterate all slots; widget_to_chunk[i] != -1 means this widget was visited
+	// by the BFS in this call. Widget handles are not guaranteed to fall in
+	// [from, to], so we cannot restrict by index here.
 	for (int i = 1; i < MAX_NUM_WIDGETS; ++i)
 	{
-		WzWidgetData* widget = &wz->widgets[i];
+		if (!wz->occupied[i]) continue;
 
-		if (!wz->occupied[i])
-		{
-			continue;
-		}
+		WzWidgetData* widget = &wz->widgets[i];
 
 		if (widget->free_from_parent)
 		{
@@ -3112,6 +3116,8 @@ void wz_do_layout_refactor_me()
 			continue;
 		}
 
+		if (widget_to_chunk[i] == -1) continue;
+
 		int parent_chunk = widget_parent_chunk[i];
 		int lane = widget_lane[i];
 
@@ -3120,13 +3126,13 @@ void wz_do_layout_refactor_me()
 		widget->actual_w = (unsigned)slots[parent_chunk].abs_width[lane];
 		widget->actual_h = (unsigned)slots[parent_chunk].abs_height[lane];
 
-		// Test
+		// Not sure it should be here
 		widget->actual_x += widget->x;
 		widget->actual_y += widget->y;
 
 	}
-
 }
+#endif
 
 void wz_widget_set_width(WzWidget widget, unsigned w)
 {
@@ -3183,7 +3189,7 @@ void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
 	for (unsigned i = 0; i < tabs_count; ++i)
 	{
 		bool b = false;
-		WzWidget tab = wz_command_button(tab_names[i], &b, tabs_panel);
+		WzWidget tab = wz_command_button(tabs_panel, tab_names[i], &b);
 		wz_widget_set_width(tab, 30);
 		wz_widget_set_border(tab, WZ_BORDER_TYPE_TAB);
 		tabs[i] = tab;
@@ -3205,6 +3211,24 @@ void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
 	}
 }
 
+
+void wz_dropdown_run(WzWidgetData* data)
+{
+	//if (*data->active)
+	if (1)
+	{
+#if 0
+		bool is_selected;
+		unsigned items[] = { 0, 1, 2 };
+		unsigned unique_ids[] = { 100, 101, 102 };
+		wzrd_label_list(data->handle, texts, texts_count, items, unique_ids, w, 20, WZ_WHITE,
+			0, selected_text, &is_selected);
+#endif
+		WzWidget w = wz_widget(data->handle);
+		wz_widget_set_size(w, 50, 50);
+	}
+}
+
 void wz_end()
 {
 
@@ -3213,8 +3237,8 @@ void wz_end()
 	unsigned int widgets_stack[MAX_NUM_WIDGETS];
 	unsigned int widgets_visits[MAX_NUM_WIDGETS];
 
-	wz_do_layout_refactor_me();
-
+	//wz_do_layout_refactor_me(1, wz->widgets_count);
+	
 	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
 	{
 		wz->widget_rects[i] = (WzRect)
@@ -3242,7 +3266,6 @@ void wz_end()
 		}
 	}
 
-
 	// Second pass: handle scrollbars
 	for (int i = 0; i < wz->scrollbars_count; ++i)
 	{
@@ -3266,6 +3289,7 @@ void wz_end()
 		{
 			continue;
 		}
+
 		float ratio = (float)content_panel_h / (float)content_h;
 		if (ratio > 1)
 		{
@@ -3287,6 +3311,38 @@ void wz_end()
 		scrollbar_data->actual_y += *scrollbar.scroll;
 		wz_widget_add_offset(content_panel->handle, 0, -1 * *scrollbar.scroll);
 	}
+
+	// Run widgets
+	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
+	{
+		WzWidgetData* widget = &wz->widgets[i];
+		switch (widget->type)
+		{
+		case WZ_WIDGET_TYPE_COMMAND_BUTTON:
+		{
+			wz_command_button_run(widget->handle, widget->released);
+			break;
+		}
+		case WZ_WIDGET_TYPE_INPUT_BOX:
+		{
+			wz_text_box_run(widget->handle, widget->input_state);
+			break;
+		}
+		case WZ_WIDGET_TYPE_SLIDER:
+		{
+			wz_slider_run(widget->handle);
+			break;
+		}
+		case WZ_WIDGET_TYPE_DROPDOWN:
+		{
+			wz_dropdown_run(widget);
+			break;
+		}
+		}
+	}
+
+	// Second layout
+	wz_do_layout_refactor_me(wz->widgets_count, MAX_NUM_WIDGETS - 1);
 
 	// Cull
 	for (unsigned int i = 1; i < MAX_NUM_WIDGETS; ++i)
@@ -3332,6 +3388,7 @@ void wz_end()
 	unsigned stack_size = 0;
 	indices_stack[stack_size++] = wz->widgets[1].handle;
 	wz->boxes_indices_count = 0;
+
 #if 0
 	//for (int pointer = 1; pointer < stack_size; )
 	while (stack_size)
@@ -3392,29 +3449,6 @@ void wz_end()
 		}
 	}
 
-	// ...
-	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
-	{
-		WzWidgetData* widget = &wz->widgets[i];
-		switch (widget->type)
-		{
-		case WZ_WIDGET_TYPE_COMMAND_BUTTON:
-		{
-			wz_command_button_run(widget->handle, widget->released);
-			break;
-		}
-		case WZ_WIDGET_TYPE_INPUT_BOX:
-		{
-			wz_text_box_run(widget->handle, widget->input_state);
-			break;
-		}
-		case WZ_WIDGET_TYPE_SLIDER:
-		{
-			wz_slider_run(widget->handle);
-			break;
-		}
-		}
-	}
 
 	// Handle trees
 	WzTree* tree = &wz->trees[0];
@@ -3514,6 +3548,9 @@ void wz_end()
 		wz_draw_string_to_buffer(&temp_buffer[temp_buffer_count++], line_str, rect);
 #endif
 	}
+
+
+	wz->widgets_count = 0;
 }
 
 WzGui* wzrd_canvas_get()
@@ -3876,31 +3913,6 @@ WzWidget wz_dialog_raw(int* x, int* y, unsigned* w, unsigned* h,
 
 }
 
-WzWidget wz_dropdown(WzWidget parent, int* selected_text, const WzStr* texts,
-	int texts_count, int w, bool* active)
-{
-	WzWidget widget = wz_widget(parent);
-	wz_widget_set_size(widget, w, 20);
-	wz_widget_set_color(widget, WZ_WHITE);
-	wz_widget_set_border(widget, WZ_BORDER_TYPE_CLICKED);
-	wz_widget_add_text(widget, wz_str_create("wowow"));
-
-	if (*active)
-	{
-		bool is_selected;
-		unsigned items[] = { 0, 1, 2 };
-		unsigned unique_ids[] = { 100, 101, 102 };
-		wzrd_label_list(parent, texts, texts_count, items, unique_ids, w, 20, WZ_WHITE,
-			0, selected_text, &is_selected);
-	}
-
-	return widget;
-}
-
-void wz_widget_set_color(WzWidget widget, unsigned int color)
-{
-	wz_widget_set_color_old(widget, color);
-}
 
 void wzrd_label_list_raw(WzWidget parent, WzStr* item_names,
 	unsigned int count, unsigned* items, unsigned* unique_ids,
@@ -3930,14 +3942,15 @@ void wzrd_label_list_raw(WzWidget parent, WzStr* item_names,
 		WzWidget wdg;
 
 		unsigned idx = items[i];
-		wdg = wz_command_button(item_names[idx], &is_label_clicked, panel);
+		wdg = wz_command_button(panel, item_names[idx], &is_label_clicked);
 		wz_widget_set_color(wdg, color);
 		wz_widget_get(wdg)->unique_id = unique_ids[idx];
 		wz_widget_set_border(wdg, WZ_BORDER_TYPE_NONE);
 		wz_widget_set_size(wdg, width, height);
 		wz_widget_set_margins(wdg, 0);
+		wz_widget_get(wdg)->dont_show_special_border_on_click = true;
 
-		
+
 		if (widgets)
 		{
 			widgets[i] = wdg;
@@ -3955,6 +3968,28 @@ void wzrd_label_list_raw(WzWidget parent, WzStr* item_names,
 			//wz_widget_get(wdg)->color = color
 		}
 	}
+}
+
+
+WzWidget wz_dropdown(WzWidget parent, int* selected_text, const WzStr* texts,
+	int texts_count, int w, bool* active)
+{
+	WzWidget widget = wz_widget(parent);
+	wz_widget_set_size(widget, w, 20);
+	wz_widget_set_color(widget, WZ_WHITE);
+	wz_widget_set_border(widget, WZ_BORDER_TYPE_CLICKED);
+	wz_widget_add_text(widget, wz_str_create("wowow"));
+	wz_widget_set_type(widget, WZ_WIDGET_TYPE_DROPDOWN);
+	
+	WzWidget button = wz_command_button(widget, wz_str_create("www"), active);
+	wz_widget_set_x(button, w - 10);
+
+	return widget;
+}
+
+void wz_widget_set_color(WzWidget widget, unsigned int color)
+{
+	wz_widget_set_color_old(widget, color);
 }
 
 WzWidget wz_vpanel_raw(WzWidget parent, const char* file, unsigned int line)
@@ -4264,16 +4299,15 @@ void wz_command_button_run(WzWidget button, bool* released)
 		*released = true;
 	}
 
-	if ((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button))
+	if (wz_widget_is_interacting(button) || 
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
 	{
 		*released = true;
-		wz_widget_set_border(button, WZ_BORDER_TYPE_CLICKED);
-		printf("wow\n");
-	}
 
-	if (wz_widget_is_interacting(button))
-	{
-		wz_widget_set_border(button, WZ_BORDER_TYPE_CLICKED);
+		if (!wz_widget_get(button)->dont_show_special_border_on_click)
+		{
+			wz_widget_set_border(button, WZ_BORDER_TYPE_CLICKED);
+		}
 	}
 }
 
@@ -4284,8 +4318,8 @@ void wz_widget_disable(WzWidget widget, bool disable)
 
 #define DEFAULT_PADDING 11
 
-WzWidget wz_command_button_raw(WzStr str, bool* released,
-	WzWidget parent, const char* file_name, unsigned int line)
+WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* released,
+	const char* file_name, unsigned int line)
 {
 	float w = 0, h = 0;
 	wz->get_string_size(str.str, 0, strlen(str.str), 0, &w, &h);
@@ -4327,6 +4361,11 @@ void wz_log(WzLogMessage* arr, unsigned int* count, const char* fmt, ...)
 
 }
 
+
+void wz_do_layout_refactor_me()
+{
+
+}
 
 void wz_layout(unsigned int index,
 	WzWidgetData* widgets, WzLayoutRect* rects,

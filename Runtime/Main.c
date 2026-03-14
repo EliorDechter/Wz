@@ -1062,7 +1062,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
 		static unsigned selected_text;
 		WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
-		static bool active = true;
+		static bool active;
 		unsigned items[] = { 0, 1, 2 };
 		wz_dropdown(ib_window, &selected_text, strs, 3, 70, &active);
 	}
@@ -1070,10 +1070,8 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	if (0)
 	{
 		static bool b;
-		WzWidget a = wz_command_button(wz_str_create("wow"), &b, ib_window);
+		WzWidget a = wz_command_button(ib_window, wz_str_create("wow"), &b);
 		gui_window.gui.focused_widget_index = a.handle;
-		wz_command_button(wz_str_create("wow"), &b, ib_window);
-		wz_command_button(wz_str_create("wow"), &b, ib_window);
 	}
 
 	WzStr names[] = {

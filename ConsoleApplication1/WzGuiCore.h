@@ -319,7 +319,8 @@ enum
 	WZ_WIDGET_TYPE_COMMAND_NONE,
 	WZ_WIDGET_TYPE_COMMAND_BUTTON,
 	WZ_WIDGET_TYPE_INPUT_BOX,
-	WZ_WIDGET_TYPE_SLIDER
+	WZ_WIDGET_TYPE_SLIDER,
+	WZ_WIDGET_TYPE_DROPDOWN,
 };
 
 typedef struct wzrd_handle
@@ -484,6 +485,10 @@ typedef struct
 	bool* released;
 	WzWidget slider;
 	float* slider_pos;
+	bool* active;
+
+	// Options
+	bool dont_show_special_border_on_click;
 
 	bool is_horizontal;
 } WzWidgetData;
@@ -642,6 +647,7 @@ typedef struct WzGui
 	// Frame ?
 	WzWidgetData widgets[MAX_NUM_WIDGETS];
 	bool occupied[MAX_NUM_WIDGETS];
+	unsigned widgets_count;
 
 	WzRect widget_rects[MAX_NUM_WIDGETS];
 
@@ -658,7 +664,6 @@ typedef struct WzGui
 
 	WzWidgetData cached_boxes[MAX_NUM_WIDGETS];
 	int cached_boxes_count;
-
 
 	WzRect* rects; // aka Final Layout
 
@@ -693,6 +698,7 @@ typedef struct WzGui
 
 	unsigned focused_widget_unique_id;
 	unsigned focused_widget_index;
+
 
 } WzGui;
 
@@ -910,7 +916,7 @@ void wz_widget_ignore_unique_id(WzWidget widget);
 WzWidget wzrd_label_button_raw(WzStr str, bool* result, WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_button_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
 WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
-WzWidget wz_command_button_raw(WzStr str, bool* b, WzWidget parent, const char* file, unsigned int line);
+WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* b, const char* file, unsigned int line);
 void wz_command_button_run(WzWidget button, bool* released);
 WzWidget wz_dropdown(WzWidget parent, unsigned* selected_text,
 	const WzStr* texts, int texts_count, int w, bool* active);
@@ -952,7 +958,7 @@ WzWidget wz_toggle_raw(WzWidget parent, unsigned w, unsigned h, unsigned int col
 WzWidget wz_texture_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, const char* file_name, unsigned int line);
 void wz_widget_add_horizontal_line(WzWidget widget, unsigned w);
 void wz_widget_add_vertical_line(WzWidget widget, unsigned h);
-void wz_do_layout_refactor_me();
+void wz_do_layout_refactor_me(int from, int to);
 void wz_widget_add_rect_absolute(WzWidget widget, int x, int y, unsigned w, unsigned h, unsigned int color);
 WzWidget wz_vpanel_raw(WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_hpanel_raw(WzWidget parent, const char* file, unsigned int line);
@@ -1006,7 +1012,7 @@ WzWidget wz_scene(WzScene scene, WzWidget parent, WzTexture texture, int x, int 
 // High importance widgets
 // Missing checkbox, radiobox, combox
 #define wz_label(parent, str) wz_label_raw(parent, str, __FILE__, __LINE__)
-#define wz_command_button(str, b, parent) wz_command_button_raw(str, b, parent, __FILE__, __LINE__)
+#define wz_command_button(parent, str, b) wz_command_button_raw(parent, str, b, __FILE__, __LINE__)
 #define wz_text_box(parent, state, flags, filter, committed, placeholder) \
 	wz_text_box_raw(parent, state, flags, filter, committed, placeholder, __FILE__, __LINE__)
 	

@@ -87,7 +87,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 			wz_widget_set_child_gap(panel, 15);
 
 			bool b = false;
-			WzWidget button = wz_command_button(wz_str_create("Add Object"), &b, panel);
+			WzWidget button = wz_command_button(panel, wz_str_create("Add Object"), &b);
 
 			if (b)
 			{
@@ -246,13 +246,13 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 						{
 							bool b1;
 
-							wz_command_button(wz_str_create("OK"), &b1, buttons_panel);
+							wz_command_button(buttons_panel, wz_str_create("OK"), &b1);
 							if (b1) {
 								ok = true;
 							}
 
 							bool b2;
-							wz_command_button(wz_str_create("Cancel"), &b2, buttons_panel);
+							wz_command_button(buttons_panel, wz_str_create("Cancel"), &b2);
 							if (b2) {
 								cancel = true;
 							}
@@ -286,7 +286,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 		}
 	}
 
-	wz_do_layout_refactor_me();
+	wz_do_layout_refactor_me(1, MAX_NUM_WIDGETS - 1);
 
 	if (wz_widget_is_activating(draw_panel))
 	{
@@ -361,7 +361,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 			{
 				WzWidgetData* draw_panel_data = wz_widget_get(draw_panel);
 				bool b;
-				WzWidget widg = wz_command_button(wz_str_create("wow"), &b, draw_panel);
+				WzWidget widg = wz_command_button(draw_panel, wz_str_create("wow"), &b);
 				wz_widget_set_size(widg, w, h);
 				wz_widget_set_x(widg, g_editor.drawing_widget_x - draw_panel_data->actual_x);
 				wz_widget_set_y(widg, g_editor.drawing_widget_y - draw_panel_data->actual_y);
@@ -375,7 +375,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 		}
 	}
 
-	wz_do_layout_refactor_me();
+	wz_do_layout_refactor_me(1, MAX_NUM_WIDGETS - 1);
 
 	if (0)
 	{
