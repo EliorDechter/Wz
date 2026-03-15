@@ -397,7 +397,7 @@ typedef struct
 	unsigned unique_id;
 
 	// New layout stuff
-	unsigned int constraint_min_w, constraint_min_h, constraint_max_h, constraint_max_w;
+	unsigned int min_w, min_h, constraint_max_h, constraint_max_w;
 	WzWidget parent;
 	unsigned char main_axis_size_type, size_type_vertical;
 	unsigned int flex_fit; // Should the widget take all the space given to it 

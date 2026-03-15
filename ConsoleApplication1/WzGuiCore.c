@@ -162,7 +162,7 @@ void wz_widget_set_min_w(WzWidget w, int width)
 {
 	wz_assert(width);
 	WzWidgetData* b = wz_widget_get(w);
-	b->constraint_min_w = width;
+	b->min_w = width;
 }
 
 void wz_widget_data_set_x(WzWidgetData* widget, int x)
@@ -640,7 +640,7 @@ WzWidgetData wz_widget_create(WzWidget parent)
 	box.layer = 0;
 	box.layout = WZ_LAYOUT_NONE;
 	box.flex_factor = 0;
-	box.constraint_min_w = box.constraint_min_h = 0;
+	box.min_w = box.min_h = 0;
 	box.constraint_max_w = box.constraint_max_h = UINT_MAX;
 	box.x = box.y = 0;
 	box.free_from_parent = 0;
@@ -1455,8 +1455,8 @@ void wz_widget_set_constraints(WzWidget widget,
 	unsigned int min_w, unsigned int min_h, unsigned int max_w, unsigned int max_h)
 {
 	WzWidgetData* data = wz_widget_get(widget);
-	data->constraint_min_w = min_w;
-	data->constraint_min_h = min_h;
+	data->min_w = min_w;
+	data->min_h = min_h;
 	data->constraint_max_w = max_w;
 	data->constraint_max_h = max_h;
 }
@@ -3020,8 +3020,8 @@ void wz_do_layout_refactor_me(int from, int to)
 			WzWidgetData* child = &wz->widgets[chandle];
 			if (child->free_from_parent) continue;
 
-			total_min_w += (float)(child->constraint_min_w + child->margin_left + child->margin_right);
-			total_min_h += (float)(child->constraint_min_h + child->margin_top + child->margin_bottom);
+			total_min_w += (float)(child->min_w + child->margin_left + child->margin_right);
+			total_min_h += (float)(child->min_h + child->margin_top + child->margin_bottom);
 			++non_free_count;
 
 			if (lane == 8)
@@ -3040,8 +3040,8 @@ void wz_do_layout_refactor_me(int from, int to)
 				lane = 0;
 			}
 
-			slots[k].min_width[lane] = (float)child->constraint_min_w;
-			slots[k].min_height[lane] = (float)child->constraint_min_h;
+			slots[k].min_width[lane] = (float)child->min_w;
+			slots[k].min_height[lane] = (float)child->min_h;
 			slots[k].max_width[lane] = child->constraint_max_w ? (float)child->constraint_max_w : 1e9f;
 			slots[k].max_height[lane] = child->constraint_max_h ? (float)child->constraint_max_h : 1e9f;
 			slots[k].flex[lane] = (float)child->flex_factor;
@@ -3111,8 +3111,8 @@ void wz_do_layout_refactor_me(int from, int to)
 		{
 			widget->actual_x = widget->x;
 			widget->actual_y = widget->y;
-			widget->actual_w = widget->constraint_min_w;
-			widget->actual_h = widget->constraint_min_h;
+			widget->actual_w = widget->min_w;
+			widget->actual_h = widget->min_h;
 			continue;
 		}
 
@@ -3137,13 +3137,13 @@ void wz_do_layout_refactor_me(int from, int to)
 void wz_widget_set_width(WzWidget widget, unsigned w)
 {
 	WzWidgetData* data = wz_widget_get(widget);
-	data->constraint_min_w = data->constraint_max_w = w;
+	data->min_w = data->constraint_max_w = w;
 }
 
 void wz_widget_set_height(WzWidget widget, unsigned h)
 {
 	WzWidgetData* data = wz_widget_get(widget);
-	data->constraint_min_h = data->constraint_max_h = h;
+	data->min_h = data->constraint_max_h = h;
 }
 
 WzWidget wz_sized_box(WzWidget parent, unsigned w, unsigned h)
@@ -3342,7 +3342,7 @@ void wz_end()
 	}
 
 	// Second layout
-	wz_do_layout_refactor_me(wz->widgets_count, MAX_NUM_WIDGETS - 1);
+	wz_layout_new(wz->widgets_count, MAX_NUM_WIDGETS - 1);
 
 	// Cull
 	for (unsigned int i = 1; i < MAX_NUM_WIDGETS; ++i)
@@ -4361,9 +4361,113 @@ void wz_log(WzLogMessage* arr, unsigned int* count, const char* fmt, ...)
 
 }
 
-
-void wz_do_layout_refactor_me()
+typedef struct WzChunk
 {
+	// Chunk data
+	float min_width[WZ_CHUNK_SIZE];
+	float min_height[WZ_CHUNK_SIZE];
+	float flex[WZ_CHUNK_SIZE];
+	float margin_left[WZ_CHUNK_SIZE];
+	float margin_right[WZ_CHUNK_SIZE];
+	float margin_top[WZ_CHUNK_SIZE];
+	float margin_bottom[WZ_CHUNK_SIZE];
+	float max_width[WZ_CHUNK_SIZE];
+	float max_height[WZ_CHUNK_SIZE];
+	float cross_align[WZ_CHUNK_SIZE];
+	float avail_width[WZ_CHUNK_SIZE];
+	float avail_height[WZ_CHUNK_SIZE];
+	float abs_width[WZ_CHUNK_SIZE];
+	float abs_height[WZ_CHUNK_SIZE];
+	float abs_x[WZ_CHUNK_SIZE];
+	float abs_y[WZ_CHUNK_SIZE];
+
+	unsigned count;
+} WzChunk;
+
+typedef struct WzChunkLayout
+{
+	// Chunk layout data
+	float    pad_left, pad_right, pad_top, pad_bottom;
+	float    border_left, border_right, border_top, border_bottom;
+	float    child_gap;
+	float    min_width, min_height;
+	float    flex_total;
+	float    inner_width, inner_height;
+	float    cursor_x, cursor_y;
+	int32_t  shrink_width, shrink_height;
+	uint32_t child_count;
+	uint32_t parent_chunk, parent_slot;
+	bool  is_horizontal;
+	float    total_children_min_width, total_children_min_height;
+	float    w_per_flex_cache, h_per_flex_cache;
+	unsigned  total_child_count;
+
+	//int32_t  is_continuation;
+	//int32_t  overflow_group_head;
+	unsigned chunk;
+	unsigned chunk_stride;
+} WzChunkLayout;
+
+WzChunk chunks[MAX_NUM_WIDGETS];
+unsigned chunks_count;
+
+WzChunkLayout layouts[MAX_NUM_WIDGETS];
+unsigned layouts_count;
+
+void wz_layout_new()
+{
+	for (unsigned i = 0; i < wz->widgets_count; ++i)
+	{
+		WzWidgetData* data = &wz->widgets[i];
+
+		if (data->layout)
+		{
+			chunks_count++;
+
+			WzChunkLayout layout = (WzChunkLayout)
+			{
+				// Chunk layout data
+				.pad_left = data->pad_left,
+				.pad_right = data->pad_right,
+				.pad_top = data->pad_top,
+				.pad_bottom = data->pad_bottom,
+				//.border_left = data->border_left, border_right, border_top, border_bottom;
+				.child_gap = data->child_gap,
+				.min_width = data->min_h,
+				.min_height = data->min_w,
+				.flex_total = 0,
+				//inner_width, inner_height;
+				//float    cursor_x, cursor_y;
+				//int32_t  shrink_width, shrink_height;
+				.child_count = data->children_count,
+				//uint32_t parent_chunk, parent_slot;
+				.is_horizontal = data->is_horizontal,
+				.total_children_min_width = 0,
+				.total_children_min_height = 0,
+				.w_per_flex_cache = 0,
+				.h_per_flex_cache = 0,
+				.total_child_count = data->children_count,
+				.chunk_stride = 0,
+				.chunk = chunks_count++
+			};
+
+			unsigned current_chunk = layout.chunk;
+			for (unsigned j = 0; j < data->children_count; ++j)
+			{
+				WzChunk* chunk = &chunks[layout.chunk];
+				if (chunk->count < WZ_CHUNK_SIZE)
+				{
+					chunk->min_width[chunk->count] = data->min_w;
+				}
+			}
+
+
+			layouts[layouts_count++] =
+
+		}
+		
+	}
+
 
 }
 
@@ -4433,8 +4537,8 @@ void wz_layout(unsigned int index,
 			continue;
 		}
 
-		//wz_assert(widget->constraint_max_w >= widget->constraint_min_w);
-		//wz_assert(widget->constraint_max_h >= widget->constraint_min_h);
+		//wz_assert(widget->constraint_max_w >= widget->min_w);
+		//wz_assert(widget->constraint_max_h >= widget->min_h);
 
 		if (!widget->children_count)
 		{
@@ -4477,7 +4581,7 @@ void wz_layout(unsigned int index,
 			wz_log(log_messages, &log_messages_count,
 				"(%s) LOG: Leaf widget with constraints (%u %u %u, %u) determined its size (%u, %u)\n",
 				widget->source,
-				widget->constraint_min_w, widget->constraint_min_h,
+				widget->min_w, widget->min_h,
 				widget->constraint_max_w, widget->constraint_max_h,
 				widget->actual_w, widget->actual_h);
 
@@ -4490,9 +4594,9 @@ void wz_layout(unsigned int index,
 			{
 				if (widget->layout == WZ_LAYOUT_HORIZONTAL)
 				{
-					constraint_min_main_axis = &widget->constraint_min_w;
+					constraint_min_main_axis = &widget->min_w;
 					constraint_max_main_axis = &widget->constraint_max_w;
-					constraint_min_cross_axis = &widget->constraint_min_h;
+					constraint_min_cross_axis = &widget->min_h;
 					constraint_max_cross_axis = &widget->constraint_max_h;
 					actual_size_main_axis = &widget->actual_w;
 					actual_size_cross_axis = &widget->actual_h;
@@ -4503,9 +4607,9 @@ void wz_layout(unsigned int index,
 				}
 				else if (widget->layout == WZ_LAYOUT_VERTICAL)
 				{
-					constraint_min_main_axis = &widget->constraint_min_h;
+					constraint_min_main_axis = &widget->min_h;
 					constraint_max_main_axis = &widget->constraint_max_h;
-					constraint_min_cross_axis = &widget->constraint_min_w;
+					constraint_min_cross_axis = &widget->min_w;
 					constraint_max_cross_axis = &widget->constraint_max_w;
 					actual_size_main_axis = &widget->actual_h;
 					actual_size_cross_axis = &widget->actual_w;
@@ -4559,12 +4663,12 @@ void wz_layout(unsigned int index,
 
 						if (widget->layout == WZ_LAYOUT_HORIZONTAL)
 						{
-							child_constraint_min_cross_axis = &child->constraint_min_h;
+							child_constraint_min_cross_axis = &child->min_h;
 							child_constraint_max_cross_axis = &child->constraint_max_h;
 						}
 						else if (widget->layout == WZ_LAYOUT_VERTICAL)
 						{
-							child_constraint_min_cross_axis = &child->constraint_min_w;
+							child_constraint_min_cross_axis = &child->min_w;
 							child_constraint_max_cross_axis = &child->constraint_max_w;
 						}
 						else
@@ -4654,7 +4758,7 @@ void wz_layout(unsigned int index,
 							wz_log(log_messages, &log_messages_count,
 								"(%s) LOG: Non-flex widget with constraints (%u %u %u %u)\n",
 								child->source,
-								child->constraint_min_w, child->constraint_min_h,
+								child->min_w, child->min_h,
 								child->constraint_max_w, child->constraint_max_h);
 
 							widgets_stack[widgets_stack_count] = widget->children[i].handle;
@@ -4792,16 +4896,16 @@ void wz_layout(unsigned int index,
 
 						if (widget->layout == WZ_LAYOUT_HORIZONTAL)
 						{
-							child_constraint_min_main_axis = &child->constraint_min_w;
+							child_constraint_min_main_axis = &child->min_w;
 							child_constraint_max_main_axis = &child->constraint_max_w;
-							child_constraint_min_cross_axis = &child->constraint_min_h;
+							child_constraint_min_cross_axis = &child->min_h;
 							child_constraint_max_cross_axis = &child->constraint_max_h;
 						}
 						else if (widget->layout == WZ_LAYOUT_VERTICAL)
 						{
-							child_constraint_min_main_axis = &child->constraint_min_h;
+							child_constraint_min_main_axis = &child->min_h;
 							child_constraint_max_main_axis = &child->constraint_max_h;
-							child_constraint_min_cross_axis = &child->constraint_min_w;
+							child_constraint_min_cross_axis = &child->min_w;
 							child_constraint_max_cross_axis = &child->constraint_max_w;
 						}
 						else
@@ -4855,7 +4959,7 @@ void wz_layout(unsigned int index,
 					// Main axis size
 					if (widget->main_axis_size_type == MAIN_AXIS_SIZE_TYPE_MIN)
 					{
-						if (widget->constraint_max_h == widget->constraint_min_h &&
+						if (widget->constraint_max_h == widget->min_h &&
 							widget->layout == WZ_LAYOUT_HORIZONTAL)
 						{
 							wz_log(log_messages, &log_messages_count,
@@ -4863,7 +4967,7 @@ void wz_layout(unsigned int index,
 								widget->source);
 						}
 
-						if (widget->constraint_max_h == widget->constraint_min_h &&
+						if (widget->constraint_max_h == widget->min_h &&
 							widget->layout == WZ_LAYOUT_VERTICAL)
 						{
 							wz_log(log_messages, &log_messages_count,
@@ -4962,9 +5066,9 @@ void wz_layout(unsigned int index,
 
 					// Clamp
 #if 1
-					if (widget->actual_h < widget->constraint_min_h)
+					if (widget->actual_h < widget->min_h)
 					{
-						widget->actual_h = widget->constraint_min_h;
+						widget->actual_h = widget->min_h;
 					}
 
 					if (widget->actual_h > widget->constraint_max_h)
@@ -4972,9 +5076,9 @@ void wz_layout(unsigned int index,
 						widget->actual_h = widget->constraint_max_h;
 					}
 
-					if (widget->actual_w < widget->constraint_min_w)
+					if (widget->actual_w < widget->min_w)
 					{
-						widget->actual_w = widget->constraint_min_w;
+						widget->actual_w = widget->min_w;
 					}
 
 					if (widget->actual_w > widget->constraint_max_w)
@@ -5421,8 +5525,8 @@ void wz_widget_rotate(WzWidget widget, float w)
 void wz_widget_set_size(WzWidget c, unsigned int w, unsigned int h)
 {
 	WzWidgetData* data = wz_widget_get(c);
-	data->constraint_min_h = data->constraint_max_h = h;
-	data->constraint_min_w = data->constraint_max_w = w;
+	data->min_h = data->constraint_max_h = h;
+	data->min_w = data->constraint_max_w = w;
 }
 
 // define the functions we need

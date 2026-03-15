@@ -3,7 +3,7 @@
 
 #define WZ_CHUNK_SIZE 8
 
-struct WzChunk {
+struct WzChunkOld {
     float    pad_left, pad_right, pad_top, pad_bottom;
     float    border_left, border_right, border_top, border_bottom;
     float    child_gap;
@@ -22,7 +22,7 @@ struct WzChunk {
     int32_t  overflow_group_head;
 };
 
-struct WzSlot {
+struct WzSlotOld {
     float min_width[WZ_CHUNK_SIZE];
     float min_height[WZ_CHUNK_SIZE];
     float flex[WZ_CHUNK_SIZE];
@@ -41,4 +41,4 @@ struct WzSlot {
     float abs_y[WZ_CHUNK_SIZE];
 };
 
-void wz_layout_chunks_c(struct WzChunk *chunks, struct WzSlot *slots, int num_chunks);
+void wz_layout_chunks_c(struct WzChunkOld *chunks, struct WzSlotOld *slots, int num_chunks);

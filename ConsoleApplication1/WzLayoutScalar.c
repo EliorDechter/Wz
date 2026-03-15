@@ -21,8 +21,8 @@
 #define CHUNK_SIZE WZ_CHUNK_SIZE
 
 void wz_layout_chunks_c(
-    struct WzChunk *chunks,   // [num_chunks]
-    struct WzSlot  *slots,    // [num_chunks]
+    struct WzChunkOld *chunks,   // [num_chunks]
+    struct WzSlotOld  *slots,    // [num_chunks]
     int             num_chunks)
 {
     // -----------------------------------------------------------------------

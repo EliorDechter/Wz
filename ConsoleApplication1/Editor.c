@@ -286,7 +286,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 		}
 	}
 
-	wz_do_layout_refactor_me(1, MAX_NUM_WIDGETS - 1);
+	wz_layout_new(1, MAX_NUM_WIDGETS - 1);
 
 	if (wz_widget_is_activating(draw_panel))
 	{
@@ -375,7 +375,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 		}
 	}
 
-	wz_do_layout_refactor_me(1, MAX_NUM_WIDGETS - 1);
+	wz_layout_new(1, MAX_NUM_WIDGETS - 1);
 
 	if (0)
 	{

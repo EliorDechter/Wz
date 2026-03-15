@@ -324,7 +324,7 @@ static void wz_push_filled_rect(WzDrawCommandBuffer* buf, float x, float y, floa
 	cmd->x = x; cmd->y = y; cmd->w = w; cmd->h = h; cmd->color = color;
 }
 
-static void wz_ispc_push_rect(WzDrawCommandBuffer* buf, const struct WzSlot* slot, int lane, unsigned color)
+static void wz_ispc_push_rect(WzDrawCommandBuffer* buf, const struct WzSlotOld* slot, int lane, unsigned color)
 {
 	wz_push_filled_rect(buf, slot->abs_x[lane], slot->abs_y[lane], slot->abs_width[lane], slot->abs_height[lane], color);
 }
@@ -1153,8 +1153,8 @@ static void wz_layout_ispc_test(void)
 #define TEST_CHUNK_SIZE 8
 
 	// WzChunk and WzSlot types come from WzLayout_ispc.h
-	struct WzChunk chunks[2];
-	struct WzSlot  slots[2];   // one SOA group per chunk
+	struct WzChunkOld chunks[2];
+	struct WzSlotOld  slots[2];   // one SOA group per chunk
 
 	memset(chunks, 0, sizeof(chunks));
 	memset(slots, 0, sizeof(slots));
@@ -1228,8 +1228,8 @@ static void wz_layout_ispc_test(void)
 #define BENCH_CHUNKS 1024
 static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out)
 {
-	static struct WzChunk chunks[BENCH_CHUNKS];
-	static struct WzSlot  slots[BENCH_CHUNKS];
+	static struct WzChunkOld chunks[BENCH_CHUNKS];
+	static struct WzSlotOld  slots[BENCH_CHUNKS];
 	memset(chunks, 0, sizeof(chunks));
 	memset(slots, 0, sizeof(slots));
 
