@@ -1,3 +1,5 @@
+
+#if 0
 // WzLayoutScalar.c
 // Scalar C translation of WzLayout.ispc — no SIMD, one value at a time.
 //
@@ -225,3 +227,5 @@ void wz_layout_chunks_c(
         chunks[i].cursor_y = cy + (horizontal ? 0.f : total_h + (float)chunks[i].child_count * gap);
     }
 }
+
+#endif

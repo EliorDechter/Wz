@@ -1,7 +1,6 @@
 #pragma once
 #include <stdint.h>
 
-#define WZ_CHUNK_SIZE 8
 
 struct WzChunkOld {
     float    pad_left, pad_right, pad_top, pad_bottom;

@@ -179,12 +179,17 @@ void wz_widget_set_x(WzWidget w, int x)
 {
 	WzWidgetData* widget = wz_widget_get(w);
 	wz_widget_data_set_x(widget, x);
+
+	wz->chunks[widget->chunk].relative_x[widget->slot] = x;
+
 }
 
 void wz_widget_set_y(WzWidget w, int y)
 {
 	WzWidgetData* widget = wz_widget_get(w);
 	wz_widget_data_set_y(widget, y);
+
+	wz->chunks[widget->chunk].relative_y[widget->slot] = y;
 }
 
 void wz_widget_set_margins(WzWidget w, unsigned int pad)
@@ -651,6 +656,8 @@ WzWidgetData wz_widget_create(WzWidget parent)
 	box.scale[0] = 1;
 	box.scale[1] = 1;
 	box.border_type = WZ_BORDER_TYPE_NONE;
+	box.min_h = 50;
+	box.min_w = 50;
 
 	// TODO: Paddin for border. Remove!
 	box.margin_top = 2;
@@ -678,13 +685,36 @@ WzWidget wz_widget_persistent(WzWidget parent, WzWidgetData widget_data)
 	return widget;
 }
 
+void wz_widget_add_to_layout_chunk(unsigned layout_chunk)
+{
+
+}
+
 WzWidget wz_widget_raw(WzWidget parent, const char* file, unsigned int line)
 {
 	WzWidgetData box = wz_widget_create(parent);
+
+	// New for layouting
+		// TODO: Handle the case where we are increasing the stride but the next chunk is occupied
+	WzWidgetData* parent_data = wz_widget_get(parent);
+	WzChunkLayout* layout = &wz->layouts[parent_data->layout_chunk];
+	WzChunk* chunk = &wz->chunks[layout->chunk + layout->chunk_stride];
+	box.slot = chunk->count++;
+	box.chunk = layout->chunk + layout->chunk_stride;
+	layout->child_count++;
+
+	if (chunk->count == WZ_CHUNK_SIZE)
+	{
+		layout->chunk_stride++;
+		wz->chunks_count++;
+	}
+
 	WzWidget widget = wz_widget_add_to_frame(parent, box);
 	wz_widget_add_source(widget, file, line);
-
+	wz_widget_set_color(widget, 0xc0c0c0ff);
 	wz->widgets_count++;
+
+	chunk->widget_index[box.slot] = widget.handle;
 
 	return widget;
 }
@@ -813,7 +843,6 @@ WzWidget wz_begin(
 	unsigned events_count,
 	bool enable_input)
 {
-
 	memset(wz->occupied, 0, sizeof(*wz->occupied) * MAX_NUM_WIDGETS);
 	for (unsigned i = 0; i < wz->persistent_widgets_count; ++i)
 	{
@@ -913,6 +942,16 @@ WzWidget wz_begin(
 
 	wz->scrollbars_count = 0;
 	wz->scenes_count = 0;
+
+	wz->layouts[0] = (WzChunkLayout){ .child_gap = 5 };
+	wz->chunks_count = 1;
+	wz->widgets_count = 1;
+
+	{
+		wz->layouts_count = 1;
+		wz->layouts[0].available_width = wz->window.w;
+		wz->layouts[0].available_height = wz->window.h;
+	}
 }
 
 void wz_draw_rect(WzDrawCommand* out_command,
@@ -1415,19 +1454,29 @@ void wz_widget_set_main_axis_size_min(WzWidget w)
 	d->main_axis_size_type = MAIN_AXIS_SIZE_TYPE_MIN;
 }
 
-void wz_widget_set_layout(WzWidget handle, unsigned int layout)
+void wz_widget_set_layout(WzWidget handle, unsigned int layout_type)
 {
 	WzWidgetData* d = wz_widget_get(handle);
-	d->layout = layout;
-	if (layout == WZ_LAYOUT_HORIZONTAL)
-	{
-		d->is_horizontal = true;
-	}
-	{
-		d->is_horizontal = false;
-	}
+	d->layout = layout_type;
+
 	//d->flex_fit = WZ_FLEX_FIT_TIGHT;
 	//d->main_axis_size_type = MAIN_AXIS_SIZE_TYPE_MAX;
+
+	unsigned chunk_idx = wz->chunks_count++;
+	unsigned layout_idx = wz->layouts_count++;
+	WzChunkLayout layout =
+	{
+		.parent_chunk = d->chunk,
+		.parent_slot = d->slot,
+		.chunk = chunk_idx,
+		.child_gap = 5,
+		.layout_type = layout_type,
+		.pad_bottom = 5, .pad_left = 5, .pad_top = 5, .pad_right = 5
+	};
+
+	wz->layouts[layout_idx] = layout;
+	d->layout_chunk = layout_idx;
+
 }
 
 void wz_draw_text(WzDrawCommand* out_command, const char* string, WzRect rect)
@@ -1472,7 +1521,7 @@ void wz_draw(WzWidget* boxes_indices)
 
 	current_clip_widget.handle = 0;
 
-	for (int i = 0; i < MAX_NUM_WIDGETS; ++i)
+	for (int i = 0; i < wz->widgets_count; ++i)
 	{
 		widget = wz_widget_get(boxes_indices[i]);
 
@@ -2455,7 +2504,7 @@ WzStr wz_str_create_slice(const char* str, unsigned begin, unsigned end)
 static void wz_update_scroll_window(WzWidget widget, WzInputState* input_state)
 {
 	float pad_x = (float)wz->widgets[widget.handle].pad_left;
-	float box_w = wz->widget_rects[widget.handle].w - pad_x * 2.0f;
+	float box_w = wz->widgets[widget.handle].actual_w - pad_x * 2.0f;
 	float text_up_to_cursor_w, text_h;
 	wz->get_string_size(input_state->buffer, 0,
 		input_state->textedit_state.cursor, wz->widgets[widget.handle].font_id, &text_up_to_cursor_w, &text_h);
@@ -2489,8 +2538,8 @@ void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 
 	float y = 0;
 
-	float origin_x = wz->widget_rects[widget.handle].x + pad_x - (float)input_state->offset_x;
-	float origin_y = wz->widget_rects[widget.handle].y + y + pad_y;
+	float origin_x = wz->widgets[widget.handle].actual_x + pad_x - (float)input_state->offset_x;
+	float origin_y = wz->widgets[widget.handle].actual_y + y + pad_y;
 
 	// Mouse coordinates relative to text area, accounting for scroll
 	float rel_x = wz->mouse_pos.x - origin_x;
@@ -3229,26 +3278,161 @@ void wz_dropdown_run(WzWidgetData* data)
 	}
 }
 
+void wz_clean()
+{
+	// Zero out everything
+	wz->widgets_count = 0;
+
+	memset(wz->chunks, 0, MAX_NUM_WIDGETS * sizeof(*wz->chunks));
+	memset(wz->layouts, 0, MAX_NUM_WIDGETS * sizeof(*wz->layouts));
+}
+
+void wz_layout_newest()
+{
+	// Bottom sizing up pass
+	// TODO: The algorithm fails when traversing ALL widgets since they will write 0 to (0, 0)
+	for (int i = wz->layouts_count - 1; i >= 0; --i)
+	{
+		WzChunkLayout* layout = &wz->layouts[i];
+
+		unsigned max_min_width = 0, max_min_height = 0;
+
+		uint32_t total_children_min_width = 0, total_children_min_height = 0, flex_total = 0;
+
+		for (unsigned k = 0; k <= layout->chunk_stride; ++k)
+		{
+			WzChunk* chunk = &wz->chunks[layout->chunk + k];
+
+			for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
+			{
+				total_children_min_width += chunk->min_width[j];
+				total_children_min_height += chunk->min_height[j];
+				flex_total += chunk->flex[j];
+				max_min_width = chunk->min_width[j] > max_min_width ? chunk->min_width[j] : max_min_width;
+				max_min_height = chunk->min_height[j] > max_min_height ? chunk->min_height[j] : max_min_height;
+			}
+		}
+
+		layout->total_children_min_width = total_children_min_width;
+		layout->total_children_min_height = total_children_min_height;
+		layout->flex_total = flex_total;
+
+		// TODO: Remove branch
+		if (i > 0 && !(layout->layout_type & WZ_LAYOUT_NONE))
+		{
+			unsigned new_min_width = (layout->layout_type & WZ_LAYOUT_HORIZONTAL) ?
+				layout->total_children_min_width + (layout->child_count - 1) * layout->child_gap + layout->pad_left + layout->pad_right :
+				max_min_width + layout->pad_left + layout->pad_right;
+			unsigned new_min_height = (layout->layout_type & WZ_LAYOUT_VERTICAL) ?
+				layout->total_children_min_height + (layout->child_count - 1) * layout->child_gap + layout->pad_top + layout->pad_bottom :
+				max_min_height + layout->pad_top + layout->pad_bottom;
+
+			wz->chunks[layout->parent_chunk].min_width[layout->parent_slot] =
+				new_min_width > wz->chunks[layout->parent_chunk].min_width[layout->parent_slot] ?
+				new_min_width :
+				wz->chunks[layout->parent_chunk].min_width[layout->parent_slot];
+			wz->chunks[layout->parent_chunk].min_height[layout->parent_slot] =
+				new_min_height > wz->chunks[layout->parent_chunk].min_height[layout->parent_slot] ?
+				new_min_height :
+				wz->chunks[layout->parent_chunk].min_height[layout->parent_slot];
+		}
+	}
+
+	// Top down phase
+	for (int i = 0; i < wz->layouts_count; ++i)
+	{
+		WzChunkLayout* layout = &wz->layouts[i];
+
+		for (unsigned k = 0; k <= layout->chunk_stride; ++k)
+		{
+			WzChunk* chunk = &wz->chunks[layout->chunk + k];
+
+			uint32_t children_width = 0, children_height = 0;
+
+			for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
+			{
+				children_width += chunk->min_width[j] & (layout->layout_type & WZ_LAYOUT_HORIZONTAL);
+				children_height += chunk->min_height[j] & (layout->layout_type & WZ_LAYOUT_VERTICAL);
+			}
+
+			layout->available_width -= children_width;
+			layout->available_height -= children_height;
+		}
+
+		// TODO: Handle there is no availble space for min widgets
+		uint16_t flex_w = layout->flex_total && layout->available_width > 0 && (layout->layout_type & WZ_LAYOUT_HORIZONTAL) ?
+			layout->available_width / layout->flex_total : 0;
+		uint16_t flex_h = layout->flex_total && layout->available_height > 0 && (layout->layout_type & WZ_LAYOUT_VERTICAL) ?
+			layout->available_height / layout->flex_total : 0;
+
+		// TODO: This loop can be merged with the one above it 
+		for (unsigned k = 0; k <= layout->chunk_stride; ++k)
+		{
+		 	WzChunk* chunk = &wz->chunks[layout->chunk + k];
+
+			for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
+			{
+				chunk->absolute_w[j] += flex_w;
+				chunk->absolute_h[j] += flex_h;
+			}
+		}
+	}
+
+	// Layouting 
+	for (unsigned i = 0; i < wz->layouts_count; ++i)
+	{
+		WzChunkLayout* layout = &wz->layouts[i];
+		unsigned parent_x = wz->chunks[layout->parent_chunk].absolute_x[layout->parent_slot];
+		unsigned parent_y = wz->chunks[layout->parent_chunk].absolute_y[layout->parent_slot];
+		unsigned cursor_x = parent_x + layout->pad_left;
+		unsigned cursor_y = parent_y + layout->pad_top;
+
+		for (unsigned k = 0; k <= layout->chunk_stride; ++k)
+		{
+			WzChunk* chunk = &wz->chunks[layout->chunk + k];
+
+			for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
+			{
+				chunk->absolute_x[j] = (layout->layout_type & WZ_LAYOUT_NONE) ? parent_x + chunk->relative_x[j] : cursor_x;
+				chunk->absolute_y[j] = (layout->layout_type & WZ_LAYOUT_NONE) ? parent_y + chunk->relative_y[j] : cursor_y;
+
+				chunk->absolute_w[j] = chunk->min_width[j];
+				chunk->absolute_h[j] = chunk->min_height[j];
+
+				cursor_x += (bool)(layout->layout_type & WZ_LAYOUT_HORIZONTAL) * (chunk->absolute_w[j] + layout->child_gap);
+				cursor_y += (bool)(layout->layout_type & WZ_LAYOUT_VERTICAL) * (chunk->absolute_h[j] + layout->child_gap);
+			}
+		}
+	}
+
+	// Slots to widgets
+	for (unsigned i = 0; i < wz->chunks_count; ++i)
+	{
+		WzChunk* chunk = &wz->chunks[i];
+
+		for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
+		{
+			WzWidgetData* widget = &wz->widgets[chunk->widget_index[j]];
+
+			widget->actual_x = chunk->absolute_x[j];
+			widget->actual_y = chunk->absolute_y[j];
+
+			widget->actual_w = chunk->absolute_w[j];
+			widget->actual_h = chunk->absolute_h[j];
+
+		}
+	}
+
+}
+
 void wz_end()
 {
+	// TODO: Enable this
+	//wz_inherit(wz->widgets[1].handle);
 
-	wz_inherit(wz->widgets[1].handle);
-
-	unsigned int widgets_stack[MAX_NUM_WIDGETS];
-	unsigned int widgets_visits[MAX_NUM_WIDGETS];
-
+	// First layout
+	wz_layout_newest();
 	//wz_do_layout_refactor_me(1, wz->widgets_count);
-	
-	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
-	{
-		wz->widget_rects[i] = (WzRect)
-		{
-			wz->widgets[i].actual_x,
-			wz->widgets[i].actual_y,
-			wz->widgets[i].actual_w,
-			wz->widgets[i].actual_h,
-		};
-	}
 
 	// Check all ids are unique
 	// WARNING O(N^2)
@@ -3342,7 +3526,7 @@ void wz_end()
 	}
 
 	// Second layout
-	wz_layout_new(wz->widgets_count, MAX_NUM_WIDGETS - 1);
+	//wz_layout_new(wz->widgets_count, MAX_NUM_WIDGETS - 1);
 
 	// Cull
 	for (unsigned int i = 1; i < MAX_NUM_WIDGETS; ++i)
@@ -3383,35 +3567,20 @@ void wz_end()
 		}
 	}
 
-	// Sort
+
+	// Sort widgets
 	WzWidget indices_stack[STACK_MAX_DEPTH] = { 0 };
 	unsigned stack_size = 0;
 	indices_stack[stack_size++] = wz->widgets[1].handle;
 	wz->boxes_indices_count = 0;
-
-#if 0
-	//for (int pointer = 1; pointer < stack_size; )
-	while (stack_size)
 	{
-		WzWidget widget = indices_stack[stack_size - 1];
-		wz->boxes_indices[wz->boxes_indices_count++] = widget;
-		stack_size--;
-
-		WzWidgetData* data = wz_widget_get(widget);
-
-		for (unsigned i = 0; i < data->children_count; ++i)
+		for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
 		{
-			indices_stack[stack_size++] = data->children[i];
+			wz->boxes_indices[wz->boxes_indices_count++] = wz->widgets[i].handle;
 		}
-	}
-#else
-	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
-	{
-		wz->boxes_indices[wz->boxes_indices_count++] = wz->widgets[i].handle;
-	}
-#endif
 
-	qsort(wz->boxes_indices, MAX_NUM_WIDGETS, sizeof(WzWidget), wzrd_compare_boxes);
+		qsort(wz->boxes_indices, MAX_NUM_WIDGETS, sizeof(WzWidget), wzrd_compare_boxes);
+	}
 
 	wz_handle_input();
 
@@ -3549,8 +3718,7 @@ void wz_end()
 #endif
 	}
 
-
-	wz->widgets_count = 0;
+	wz_clean();
 }
 
 WzGui* wzrd_canvas_get()
@@ -3970,25 +4138,41 @@ void wzrd_label_list_raw(WzWidget parent, WzStr* item_names,
 	}
 }
 
-
-WzWidget wz_dropdown(WzWidget parent, int* selected_text, const WzStr* texts,
-	int texts_count, int w, bool* active)
+WzWidget wz_dropdown(WzWidget parent, 
+	const WzStr* texts, int texts_count, unsigned* selected_text, bool* active)
 {
 	WzWidget widget = wz_widget(parent);
-	wz_widget_set_size(widget, w, 20);
+	wz_widget_set_layout(widget, WZ_LAYOUT_NONE);
+
+	const int w = 200;
+	const int h = 20;
+	wz_widget_set_size(widget, w, h);
 	wz_widget_set_color(widget, WZ_WHITE);
 	wz_widget_set_border(widget, WZ_BORDER_TYPE_CLICKED);
 	wz_widget_add_text(widget, wz_str_create("wowow"));
 	wz_widget_set_type(widget, WZ_WIDGET_TYPE_DROPDOWN);
-	
-	WzWidget button = wz_command_button(widget, wz_str_create("www"), active);
+
+	WzWidget button = wz_command_toggle(widget, wz_str_create("www"), active);
 	wz_widget_set_x(button, w - 10);
+
+	if (*active)
+	{
+		WzWidget list = wz_widget(widget);
+		wz_widget_set_layout(list, WZ_LAYOUT_VERTICAL);
+		wz_widget_set_y(list, h);
+
+		wz_label(list, wz_str_create("wowy"));
+	}
 
 	return widget;
 }
 
-void wz_widget_set_color(WzWidget widget, unsigned int color)
+void wz_widget_set_color(WzWidget widget, unsigned color)
 {
+	WzWidgetData* data = wz_widget_get(widget);
+	WzChunk* chunk = &wz->chunks[data->chunk];
+	chunk->color[data->slot] = color;
+
 	wz_widget_set_color_old(widget, color);
 }
 
@@ -4299,7 +4483,7 @@ void wz_command_button_run(WzWidget button, bool* released)
 		*released = true;
 	}
 
-	if (wz_widget_is_interacting(button) || 
+	if (wz_widget_is_interacting(button) ||
 		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
 	{
 		*released = true;
@@ -4358,116 +4542,6 @@ void wz_log(WzLogMessage* arr, unsigned int* count, const char* fmt, ...)
 
 	arr[*count] = message;
 	*count = *count + 1;
-
-}
-
-typedef struct WzChunk
-{
-	// Chunk data
-	float min_width[WZ_CHUNK_SIZE];
-	float min_height[WZ_CHUNK_SIZE];
-	float flex[WZ_CHUNK_SIZE];
-	float margin_left[WZ_CHUNK_SIZE];
-	float margin_right[WZ_CHUNK_SIZE];
-	float margin_top[WZ_CHUNK_SIZE];
-	float margin_bottom[WZ_CHUNK_SIZE];
-	float max_width[WZ_CHUNK_SIZE];
-	float max_height[WZ_CHUNK_SIZE];
-	float cross_align[WZ_CHUNK_SIZE];
-	float avail_width[WZ_CHUNK_SIZE];
-	float avail_height[WZ_CHUNK_SIZE];
-	float abs_width[WZ_CHUNK_SIZE];
-	float abs_height[WZ_CHUNK_SIZE];
-	float abs_x[WZ_CHUNK_SIZE];
-	float abs_y[WZ_CHUNK_SIZE];
-
-	unsigned count;
-} WzChunk;
-
-typedef struct WzChunkLayout
-{
-	// Chunk layout data
-	float    pad_left, pad_right, pad_top, pad_bottom;
-	float    border_left, border_right, border_top, border_bottom;
-	float    child_gap;
-	float    min_width, min_height;
-	float    flex_total;
-	float    inner_width, inner_height;
-	float    cursor_x, cursor_y;
-	int32_t  shrink_width, shrink_height;
-	uint32_t child_count;
-	uint32_t parent_chunk, parent_slot;
-	bool  is_horizontal;
-	float    total_children_min_width, total_children_min_height;
-	float    w_per_flex_cache, h_per_flex_cache;
-	unsigned  total_child_count;
-
-	//int32_t  is_continuation;
-	//int32_t  overflow_group_head;
-	unsigned chunk;
-	unsigned chunk_stride;
-} WzChunkLayout;
-
-WzChunk chunks[MAX_NUM_WIDGETS];
-unsigned chunks_count;
-
-WzChunkLayout layouts[MAX_NUM_WIDGETS];
-unsigned layouts_count;
-
-void wz_layout_new()
-{
-	for (unsigned i = 0; i < wz->widgets_count; ++i)
-	{
-		WzWidgetData* data = &wz->widgets[i];
-
-		if (data->layout)
-		{
-			chunks_count++;
-
-			WzChunkLayout layout = (WzChunkLayout)
-			{
-				// Chunk layout data
-				.pad_left = data->pad_left,
-				.pad_right = data->pad_right,
-				.pad_top = data->pad_top,
-				.pad_bottom = data->pad_bottom,
-				//.border_left = data->border_left, border_right, border_top, border_bottom;
-				.child_gap = data->child_gap,
-				.min_width = data->min_h,
-				.min_height = data->min_w,
-				.flex_total = 0,
-				//inner_width, inner_height;
-				//float    cursor_x, cursor_y;
-				//int32_t  shrink_width, shrink_height;
-				.child_count = data->children_count,
-				//uint32_t parent_chunk, parent_slot;
-				.is_horizontal = data->is_horizontal,
-				.total_children_min_width = 0,
-				.total_children_min_height = 0,
-				.w_per_flex_cache = 0,
-				.h_per_flex_cache = 0,
-				.total_child_count = data->children_count,
-				.chunk_stride = 0,
-				.chunk = chunks_count++
-			};
-
-			unsigned current_chunk = layout.chunk;
-			for (unsigned j = 0; j < data->children_count; ++j)
-			{
-				WzChunk* chunk = &chunks[layout.chunk];
-				if (chunk->count < WZ_CHUNK_SIZE)
-				{
-					chunk->min_width[chunk->count] = data->min_w;
-				}
-			}
-
-
-			layouts[layouts_count++] =
-
-		}
-		
-	}
-
 
 }
 
@@ -5527,6 +5601,11 @@ void wz_widget_set_size(WzWidget c, unsigned int w, unsigned int h)
 	WzWidgetData* data = wz_widget_get(c);
 	data->min_h = data->constraint_max_h = h;
 	data->min_w = data->constraint_max_w = w;
+
+	// TODO: Handle max size too
+	WzChunk* chunk = &wz->chunks[data->chunk];
+	chunk->min_width[data->slot] = w;
+	chunk->min_height[data->slot] = h;
 }
 
 // define the functions we need

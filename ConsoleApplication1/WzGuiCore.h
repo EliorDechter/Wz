@@ -5,6 +5,7 @@
 // INCLUDES
 //==============================================================================
 #include <float.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
@@ -80,9 +81,12 @@
 #define WZ_FLEX_FIT_LOOSE 0
 #define WZ_FLEX_FIT_TIGHT 1
 
-#define WZ_LAYOUT_NONE 0
-#define WZ_LAYOUT_HORIZONTAL 1
-#define WZ_LAYOUT_VERTICAL 2
+enum
+{
+	WZ_LAYOUT_NONE = 1 << 0,
+	WZ_LAYOUT_HORIZONTAL = 1 << 1,
+	WZ_LAYOUT_VERTICAL = 1 << 2,
+};
 
 #define	MAIN_AXIS_SIZE_TYPE_MIN  0
 #define	MAIN_AXIS_SIZE_TYPE_MAX  1
@@ -490,7 +494,10 @@ typedef struct
 	// Options
 	bool dont_show_special_border_on_click;
 
-	bool is_horizontal;
+	// New code for layouting
+	unsigned chunk, slot, layout_chunk;
+
+
 } WzWidgetData;
 
 typedef struct WzScene
@@ -620,6 +627,66 @@ enum
 
 #define DOUBLE_CLICK_TIME_MS 300
 
+#define WZ_CHUNK_SIZE 32
+
+typedef struct WzChunk
+{
+	// Chunk data
+	uint16_t min_width[WZ_CHUNK_SIZE];
+	uint16_t min_height[WZ_CHUNK_SIZE];
+	uint8_t flex[WZ_CHUNK_SIZE];
+	uint16_t margin_left[WZ_CHUNK_SIZE];
+	uint16_t margin_right[WZ_CHUNK_SIZE];
+	uint16_t margin_top[WZ_CHUNK_SIZE];
+	uint16_t margin_bottom[WZ_CHUNK_SIZE];
+	uint16_t max_width[WZ_CHUNK_SIZE];
+	uint16_t max_height[WZ_CHUNK_SIZE];
+	uint16_t cross_align[WZ_CHUNK_SIZE];
+	uint16_t available_width[WZ_CHUNK_SIZE];
+	uint16_t available_height[WZ_CHUNK_SIZE];
+	uint32_t color[WZ_CHUNK_SIZE];
+
+	uint16_t absolute_x[WZ_CHUNK_SIZE];
+	uint16_t absolute_y[WZ_CHUNK_SIZE];
+	uint16_t absolute_w[WZ_CHUNK_SIZE];
+	uint16_t absolute_h[WZ_CHUNK_SIZE];
+
+	uint16_t relative_x[WZ_CHUNK_SIZE];
+	uint16_t relative_y[WZ_CHUNK_SIZE];
+
+	uint16_t widget_index[WZ_CHUNK_SIZE];
+
+	uint16_t count;
+} WzChunk;
+
+typedef struct WzChunkLayout
+{
+	// Chunk layout data
+	uint16_t pad_left, pad_right, pad_top, pad_bottom;
+	uint16_t border_left, border_right, border_top, border_bottom;
+	uint16_t child_gap;
+	uint16_t min_width, min_height;
+	uint16_t flex_total;
+	uint16_t inner_width, inner_height;
+	uint16_t cursor_x, cursor_y;
+	int32_t  shrink_width, shrink_height;
+	uint32_t child_count;
+	uint32_t parent_chunk, parent_slot;
+	//bool  is_horizontal;
+	uint8_t layout_type;
+	uint16_t total_children_min_width, total_children_min_height;
+	uint16_t w_per_flex_cache, h_per_flex_cache;
+	uint16_t total_child_count;
+
+	//int32_t  is_continuation;
+	//int32_t  overflow_group_head;
+	unsigned chunk;
+	unsigned chunk_stride;
+
+	int16_t available_width, available_height;
+
+} WzChunkLayout;
+
 typedef struct WzGui
 {
 	WzWidgetData persistent_widgets[MAX_NUM_PERSISTENT_WIDGETS];
@@ -645,11 +712,9 @@ typedef struct WzGui
 	WzState mouse_left, mouse_right;
 
 	// Frame ?
-	WzWidgetData widgets[MAX_NUM_WIDGETS];
+	WzWidgetData widgets[MAX_NUM_WIDGETS * 8];
 	bool occupied[MAX_NUM_WIDGETS];
 	unsigned widgets_count;
-
-	WzRect widget_rects[MAX_NUM_WIDGETS];
 
 	int boxes_in_stack_count, total_num_windows;
 
@@ -699,6 +764,13 @@ typedef struct WzGui
 	unsigned focused_widget_unique_id;
 	unsigned focused_widget_index;
 
+
+	// New 3.15 for layouting
+	WzChunk chunks[MAX_NUM_WIDGETS];
+	unsigned chunks_count;
+
+	WzChunkLayout layouts[MAX_NUM_WIDGETS];
+	unsigned layouts_count;
 
 } WzGui;
 
@@ -918,8 +990,7 @@ WzWidget wz_button_icon_raw(WzWidget parent, bool* result, WzTexture texture, co
 WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
 WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* b, const char* file, unsigned int line);
 void wz_command_button_run(WzWidget button, bool* released);
-WzWidget wz_dropdown(WzWidget parent, unsigned* selected_text,
-	const WzStr* texts, int texts_count, int w, bool* active);
+WzWidget wz_dropdown(WzWidget parent, const WzStr* texts, int texts_count, unsigned* selected_text, bool* active);
 WzWidget wz_dialog_raw(int* x, int* y, unsigned* w, unsigned* h, bool* active, WzStr name, int layer, WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active, const char* file, unsigned int line);
 WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, bool* active, const char* file, unsigned int line);

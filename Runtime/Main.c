@@ -1038,64 +1038,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
 	WSDL_WzBeginWidgets(&gui_window);
 
-	WzWidget ib_window = wz_vbox((WzWidget) { 0 });
-	wz_widget_set_size(ib_window, 300, 30);
-	wz_widget_set_border(ib_window, WZ_BORDER_TYPE_NONE);
+	WzWidget window = (WzWidget){ 0 };
+	WzWidget ib_window = wz_vbox(window);
 
-	// Widgets declarations
-	gui_window.gui.pasted_text = SDL_GetClipboardText();
-	wz_widget_set_size(ib_window, 300, 60);
-	static WzInputState state, state2, s;
-	if (1)
-	{
-#if 0
-		WzWidget input_box = wz_text_box(ib_window, &state, WZ_INPUT_NONE, NULL, NULL, NULL);
-		WzWidget input_box2 = wz_text_box(ib_window, &s, WZ_INPUT_NONE, NULL, NULL, NULL);
-		WzWidget input_box3 = wz_text_box(ib_window, &state2, WZ_INPUT_NONE, NULL, NULL, NULL);
-		wz_widget_set_font(input_box2, 1);
-
-		static float pos;
-		wz_slider(ib_window, 200, &pos);
-#endif
-		//bool b;
-		//wz_command_button(wz_str_create("wow"), &b, ib_window);
-
-		static unsigned selected_text;
-		WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
-		static bool active;
-		unsigned items[] = { 0, 1, 2 };
-		wz_dropdown(ib_window, &selected_text, strs, 3, 70, &active);
-	}
-
-	if (0)
-	{
-		static bool b;
-		WzWidget a = wz_command_button(ib_window, wz_str_create("wow"), &b);
-		gui_window.gui.focused_widget_index = a.handle;
-	}
-
-	WzStr names[] = {
-		wz_str_create("wow1"),
-		wz_str_create("wow2"),
-		wz_str_create("wow3"),
-	};
-
-	{
-		static int items[3] = { 0, 1, 2 };
-		static int selected = 0;
-		static bool is_selected;
-
-		static unsigned ids[3] = { 1, 2, 3 };
-		for (unsigned i = 0; i < 3; ++i)
-		{
-			ids[i] = WIDGET_LABEL_LIST000 + i;
-		}
-
-		//wz_label_list_sorted(names, 3, &items, ids, 200, 50, WZ_WHITE, &selected, &is_selected, ib_window);
-	}
-
-	static bool b;
-	//wz_command_button(wz_str_create("asd"), &b, ib_window);
+	WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
+	static bool selected_text, active;
+	wz_dropdown(ib_window, strs, 3, &selected_text, &active);
+	wz_label(ib_window, wz_str_create("eu"));
 
 	WSDL_WzEnd(&gui_window);
 
