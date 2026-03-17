@@ -347,7 +347,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 			if (widget_data->type == WZ_WIDGET_TYPE_COMMAND_BUTTON)
 			{
 				bool released = false;
-				wz_command_button_run(widget, &released);
+				//wz_command_button_run(widget, &released);
 			}
 
 		}

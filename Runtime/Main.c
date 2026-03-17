@@ -305,6 +305,28 @@ WSDL_Context gui_window;
 stbtt_fontinfo fonts[WZ_MAX_FONTS];
 float font_heights[WZ_MAX_FONTS];
 static int fonts_count = 0;
+
+#define WZ_ATLAS_FIRST 32
+#define WZ_ATLAS_LAST  126
+#define WZ_ATLAS_COUNT (WZ_ATLAS_LAST - WZ_ATLAS_FIRST + 1)
+
+typedef struct {
+    int   atlas_x;
+    int   w, h;
+    int   xoff, yoff;
+    float advance;
+} WzGlyphInfo;
+
+typedef struct {
+    SDL_Texture* texture;
+    int          atlas_w, atlas_h;
+    int          baseline;
+    float        scale;
+    int          ascent, descent, lineGap;
+    WzGlyphInfo  glyphs[WZ_ATLAS_COUNT];
+} WzFontAtlas;
+
+static WzFontAtlas font_atlases[WZ_MAX_FONTS];
 SDL_Texture* x_icon_texture;
 
 

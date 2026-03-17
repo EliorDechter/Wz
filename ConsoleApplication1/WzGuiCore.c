@@ -53,8 +53,6 @@ void wz_widget_set_pad(WzWidget widget, unsigned pad)
 
 	data->pad_left = data->pad_right = data->pad_top = data->pad_bottom = pad;
 
-	data->constraint_max_w += pad;
-	data->constraint_max_h += pad;
 }
 
 void wz_widget_set_margin_left(WzWidget widget, unsigned int pad)
@@ -1725,17 +1723,12 @@ void wz_draw(WzWidget* boxes_indices)
 			else if (widget->border_type == WZ_BORDER_TYPE_BLACK) {
 #if 1
 				// Draw top and left lines
-				(widget->handle, left0.x, left0.y, left0.w, left0.h, WZ_BLACK);
 				wz_draw_rect_new(left0.x, left0.y, left0.w, left0.h, WZ_BLACK);
 				wz_draw_rect_new(top0.x, top0.y, top0.w, top0.h, WZ_BLACK);
-				wz_draw_rect_new(top1.x, top1.y, top1.w, top1.h, WZ_BLACK);
-				wz_draw_rect_new(left1.x, left1.y, left1.w, left1.h, WZ_BLACK);
-
+				
 				// Draw bottom and right lines
 				wz_draw_rect_new(bottom0.x, bottom0.y, bottom0.w, bottom0.h, WZ_BLACK);
 				wz_draw_rect_new(right0.x, right0.y, right0.w, right0.h, WZ_BLACK);
-				wz_draw_rect_new(bottom1.x, bottom1.y, bottom1.w, bottom1.h, WZ_BLACK);
-				wz_draw_rect_new(right1.x, right1.y, right1.w, right1.h, WZ_BLACK);
 #endif
 			}
 			else if (widget->border_type == WZ_BORDER_TYPE_BOTTOM_LINE) {
@@ -3195,6 +3188,18 @@ void wz_do_layout_refactor_me(int from, int to)
 }
 #endif
 
+bool wz_widget_is_focused(WzWidget widget)
+{
+	bool result = false;
+
+	if (wz_widget_get(widget)->unique_id == wz->focused_widget_unique_id)
+	{
+		result = true;
+	}
+
+	return result;
+}
+
 void wz_widget_set_width(WzWidget widget, unsigned w)
 {
 	WzWidgetData* data = wz_widget_get(widget);
@@ -3437,6 +3442,47 @@ void wz_layout_newest()
 
 }
 
+void wz_command_button_run(WzWidget button, bool* released)
+{
+	// Active
+	if (wz_widget_is_deactivating(button) ||
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
+	{
+		*released = true;
+	}
+
+	// Border
+	if (wz_widget_is_interacting(button) ||
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
+	{
+		if (!wz_widget_get(button)->dont_show_special_border_on_click)
+		{
+			wz_widget_set_border(button, WZ_BORDER_TYPE_CLICKED);
+		}
+	}
+}
+
+void wz_toggle_run(WzWidget button, bool* released)
+{
+	// Active
+	if (wz_widget_is_activating(button) ||
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
+	{
+		*released = !(*released);
+	}
+
+	// Border
+	if (wz_widget_is_interacting(button) ||
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
+	{
+		if (!wz_widget_get(button)->dont_show_special_border_on_click)
+		{
+			wz_widget_set_border(button, WZ_BORDER_TYPE_CLICKED);
+		}
+	}
+}
+
+
 void wz_end()
 {
 	// TODO: Enable this
@@ -3516,7 +3562,12 @@ void wz_end()
 		{
 		case WZ_WIDGET_TYPE_COMMAND_BUTTON:
 		{
-			wz_command_button_run(widget->handle, widget->released);
+			wz_command_button_run(widget->handle, widget->released_or_active);
+			break;
+		}
+		case WZ_WIDGET_TYPE_TOGGLE:
+		{
+			wz_toggle_run(widget->handle, widget->released_or_active);
 			break;
 		}
 		case WZ_WIDGET_TYPE_INPUT_BOX:
@@ -3746,16 +3797,7 @@ WzWidget wz_toggle_raw(WzWidget parent, unsigned w, unsigned h, unsigned int col
 	wz_widget_add_source(handle, file_name, line);
 	wz_widget_set_max_constraints(handle, w, h);
 	wz_widget_set_color_old(handle, color);
-
-	if (wz_widget_is_deactivating(handle))
-	{
-		*active = !*active;
-	}
-
-	if (*active)
-	{
-		//wz_widget_get(widget)->border_type = WZ_BORDER_TYPE_CLICKED;
-	}
+	wz_widget_set_type(handle, WZ_WIDGET_TYPE_TOGGLE);
 
 	return handle;
 }
@@ -3831,22 +3873,16 @@ WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture,
 	return icon;
 }
 
+
+
 WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active,
 	const char* file_name, unsigned int line)
 {
 	WzWidget widget = wz_label_raw(parent, str, file_name, line);
 	wz_widget_set_border(widget, WZ_BORDER_TYPE_DEFAULT);
 	wz_widget_set_text_alignment(widget, WZ_TEXT_ALIGNMENT_CENTER);
-
-	if (wz_widget_is_deactivating(widget))
-	{
-		*active = !*active;
-	}
-
-	if (*active)
-	{
-		wz_widget_get(widget)->border_type = WZ_BORDER_TYPE_CLICKED;
-	}
+	wz_widget_set_type(widget, WZ_WIDGET_TYPE_TOGGLE);
+	wz_widget_get(widget)->released_or_active = active;
 
 	return widget;
 }
@@ -3997,6 +4033,8 @@ WzWidget wz_text_box_raw(
 	bool* committed, const char* placeholder,
 	const char* file, unsigned int line)
 {
+	// TODO: Double click to allow entering text
+
 	WzWidget widget = wz_widget_raw(parent, file, line);
 	wz_widget_set_size(widget, 101, 18 + 4 * 2);
 	wz_widget_set_pad(widget, 4);
@@ -4160,10 +4198,10 @@ WzWidget wz_dropdown(WzWidget parent,
 	wz_widget_set_size(widget, w, h);
 	wz_widget_set_color(widget, WZ_WHITE);
 	wz_widget_set_border(widget, WZ_BORDER_TYPE_CLICKED);
-	wz_widget_add_text(widget, wz_str_create("wowow"));
+	wz_widget_add_text(widget, wz_str_create("t"));
 	wz_widget_set_type(widget, WZ_WIDGET_TYPE_DROPDOWN);
 
-	WzWidget button = wz_command_toggle(widget, wz_str_create("www"), active);
+	WzWidget button = wz_command_toggle(widget, wz_str_create("tog"), active);
 	wz_widget_set_x(button, w - 10);
 
 	if (*active)
@@ -4172,9 +4210,14 @@ WzWidget wz_dropdown(WzWidget parent,
 		wz_widget_set_layout(list, WZ_LAYOUT_VERTICAL);
 		wz_widget_set_y(list, h);
 		wz_widget_set_z(list, 1);
+		wz_widget_set_border(list, WZ_BORDER_TYPE_BLACK);
+		wz_widget_set_pad(list, 0);
 
-		WzWidget label = wz_label(list, wz_str_create("wowy"));
-		wz_widget_set_color(label, WZ_WHITE);
+		for (unsigned i = 0; i < texts_count; ++i)
+		{
+			WzWidget label = wz_label(list, texts[i]);
+			wz_widget_set_color(label, WZ_WHITE);
+		}
 	}
 
 	return widget;
@@ -4477,27 +4520,16 @@ bool wzrd_v2_is_inside_polygon(wzrd_v2 point, wzrd_polygon polygon) {
 	return inside;
 }
 
-bool wz_widget_is_focused(WzWidget widget)
+void wz_command_toggle_run(WzWidget button, bool* released)
 {
-	bool result = false;
-
-	if (wz_widget_get(widget)->unique_id == wz->focused_widget_unique_id)
-	{
-		result = true;
-	}
-
-	return result;
-}
-
-void wz_command_button_run(WzWidget button, bool* released)
-{
-	if (wz_widget_is_deactivating(button))
+	if (wz_widget_is_activating(button))
 	{
 		*released = true;
 	}
 
 	if (wz_widget_is_interacting(button) ||
-		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING ||
+			wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
 	{
 		*released = true;
 
@@ -4527,7 +4559,7 @@ WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* released,
 	wz_widget_set_border(widget, WZ_BORDER_TYPE_DEFAULT);
 	wz_widget_set_text_alignment(widget, WZ_TEXT_ALIGNMENT_CENTER);
 	wz_widget_set_type(widget, WZ_WIDGET_TYPE_COMMAND_BUTTON);
-	wz_widget_get(widget)->released = released;
+	wz_widget_get(widget)->released_or_active = released;
 
 	return widget;
 }

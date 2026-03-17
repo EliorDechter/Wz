@@ -322,6 +322,7 @@ enum
 {
 	WZ_WIDGET_TYPE_COMMAND_NONE,
 	WZ_WIDGET_TYPE_COMMAND_BUTTON,
+	WZ_WIDGET_TYPE_TOGGLE,
 	WZ_WIDGET_TYPE_INPUT_BOX,
 	WZ_WIDGET_TYPE_SLIDER,
 	WZ_WIDGET_TYPE_DROPDOWN,
@@ -486,7 +487,7 @@ typedef struct
 	bool clip_content;
 
 	// State
-	bool* released;
+	bool* released_or_active;
 	WzWidget slider;
 	float* slider_pos;
 	bool* active;
@@ -989,7 +990,6 @@ WzWidget wzrd_label_button_raw(WzStr str, bool* result, WzWidget parent, const c
 WzWidget wz_button_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
 WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
 WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* b, const char* file, unsigned int line);
-void wz_command_button_run(WzWidget button, bool* released);
 WzWidget wz_dropdown(WzWidget parent, const WzStr* texts, int texts_count, unsigned* selected_text, bool* active);
 WzWidget wz_dialog_raw(int* x, int* y, unsigned* w, unsigned* h, bool* active, WzStr name, int layer, WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active, const char* file, unsigned int line);
