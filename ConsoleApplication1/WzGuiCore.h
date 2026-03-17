@@ -245,12 +245,16 @@ typedef struct wzrd_v2f {
 	float x, y;
 } wzrd_v2f;
 
-typedef enum WzBorderType
+typedef enum WzBorderStyle
 {
-	WZ_BORDER_TYPE_NONE, WZ_BORDER_TYPE_TAB, WZ_BORDER_TYPE_DEFAULT, WZ_BORDER_TYPE_RED,
-	WZ_BORDER_TYPE_BLACK, WZ_BORDER_TYPE_CLICKED,
-	WZ_BORDER_TYPE_TEXT_BOX, WZ_BORDER_TYPE_BOTTOM_LINE, BorderType_LeftLine, BorderType_Custom
-} WzBorderType;
+	WZ_BORDER_NONE,
+	WZ_BORDER_RAISED,       // light top-left, dark bottom-right (classic raised button)
+	WZ_BORDER_SUNKEN,       // dark top-left, light bottom-right (pressed / text box)
+	WZ_BORDER_FLAT,         // solid single-line, uses border_color
+	WZ_BORDER_BOTTOM_LINE,  // bottom edge only
+	WZ_BORDER_LEFT_LINE,    // left edge only
+	WZ_BORDER_TAB,          // tab open-bottom geometry
+} WzBorderStyle;
 
 typedef struct wzrd_texture {
 	void* data;
@@ -411,7 +415,7 @@ typedef struct
 	// ...
 	int actual_x, actual_y;
 	unsigned int actual_w, actual_h;
-	unsigned int layout;
+	unsigned char layout_type;
 
 	// Old
 	bool disable_hover;
@@ -447,8 +451,11 @@ typedef struct
 	unsigned font_id;
 	unsigned int color;
 	unsigned int b0, b1, b2, b3;
-	WzBorderType border_type;
-	WzBorderType window_border_type;
+	WzBorderStyle border_style;
+	WzBorderStyle window_border_style;
+	unsigned int  border_color;
+	int           border_lines;      // 0 = none, 1 = single ring, 2 = double ring
+	int           border_thickness;  // pixels per line
 
 	const char* tag;
 	const char* secondary_tag;
@@ -663,26 +670,27 @@ typedef struct WzChunk
 typedef struct WzChunkLayout
 {
 	// Chunk layout data
-	uint16_t pad_left, pad_right, pad_top, pad_bottom;
-	uint16_t border_left, border_right, border_top, border_bottom;
-	uint16_t child_gap;
+	uint8_t pad_left, pad_right, pad_top, pad_bottom;
+	//uint16_t border_left, border_right, border_top, border_bottom;
+	uint8_t border_size;
+	uint8_t child_gap;
 	uint16_t min_width, min_height;
-	uint16_t flex_total;
+	uint8_t flex_total;
 	uint16_t inner_width, inner_height;
 	uint16_t cursor_x, cursor_y;
-	int32_t  shrink_width, shrink_height;
-	uint32_t child_count;
-	uint32_t parent_chunk, parent_slot;
+	//int32_t  shrink_width, shrink_height;
+	uint16_t child_count;
+	uint16_t parent_chunk, parent_slot;
 	//bool  is_horizontal;
 	uint8_t layout_type;
 	uint16_t total_children_min_width, total_children_min_height;
 	uint16_t w_per_flex_cache, h_per_flex_cache;
-	uint16_t total_child_count;
+	uint8_t total_child_count;
 
 	//int32_t  is_continuation;
 	//int32_t  overflow_group_head;
-	unsigned chunk;
-	unsigned chunk_stride;
+	uint16_t chunk;
+	uint16_t chunk_stride;
 
 	int16_t available_width, available_height;
 
@@ -969,9 +977,11 @@ void wz_widget_set_pos(WzWidget handle, int x, int y);
 void wz_widget_data_set_pos(WzWidgetData* handle, int x, int y);
 bool wz_handle_is_valid(WzWidget handle);
 void wz_widget_set_tight_constraints(WzWidget handle, unsigned w, unsigned h);
-void wz_widget_set_border(WzWidget w, WzBorderType border_type);
+void wz_widget_set_border(WzWidget w, WzBorderStyle style);
+void wz_widget_set_border_flat(WzWidget w, unsigned int color);
+int  wz_border_size(const WzWidgetData* d);
 void wz_widget_data_set_tight_constraints(WzWidgetData* handle, unsigned w, unsigned h);
-void wz_widget_data_set_border(WzWidgetData* w, WzBorderType border_type);
+void wz_widget_data_set_border(WzWidgetData* w, WzBorderStyle style);
 WzWidgetData wz_widget_create(WzWidget parent);
 void wz_widget_resize(WzWidget widget, int* w, int* h);
 void wz_widget_set_flex_factor(WzWidget widget, unsigned int flex_factor);

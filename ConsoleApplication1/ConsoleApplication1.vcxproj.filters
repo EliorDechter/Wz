@@ -21,9 +21,6 @@
     <ClCompile Include="FileName.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Platform.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -31,9 +28,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Renderer.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Editor.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Textures.c">

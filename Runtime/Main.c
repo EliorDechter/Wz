@@ -33,7 +33,6 @@ enum
 	GEN_512_SAFE(WIDGET_LABEL_LIST)
 };
 
-
 #define STB_TEXTEDIT_IMPLEMENTATION
 #include "stb_textedit.h"
 
@@ -1052,7 +1051,6 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	ispc_cmds.count = 0;
 
 	WSDL_WzBegin(&gui_window);
-	//wz_layout_draw_test(gui_window.renderer, &ispc_cmds);
 	wz_set_gui(&gui_window.gui);
 	wz_set_string_size_callback(get_string_size);
 
@@ -1065,7 +1063,8 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	WzWidget ib_window = wz_vbox(window);
 
 	WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
-	static bool selected_text, active;
+	static int selected_text = -1;
+	static bool active;
 	wz_dropdown(ib_window, strs, 3, &selected_text, &active);
 	wz_label(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 

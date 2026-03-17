@@ -169,7 +169,6 @@
     <ClCompile Include="Actions.c" />
     <ClCompile Include="Animation.c" />
     <ClCompile Include="ArrayList.c" />
-    <ClCompile Include="Editor.c" />
     <ClCompile Include="FileName.c" />
     <ClCompile Include="Game.c" />
     <ClCompile Include="GameState.c" />
@@ -179,7 +178,6 @@
     <ClCompile Include="Main.c" />
     <ClCompile Include="Parser.c" />
     <ClCompile Include="Pathfinding.c" />
-    <ClCompile Include="Platform.c" />
     <ClCompile Include="Renderer.c" />
     <ClCompile Include="Serialization.c" />
     <ClCompile Include="Strings.c" />

@@ -1165,7 +1165,7 @@ bool wzrd_handle_is_released(WzWidget handle) {
 	return false;
 }
 
-bool wz_widget_is_hovered(WzWidget handle) {
+bool wzrd_handle_is_hovered(WzWidget handle) {
 	if (wz_widget_is_equal(handle, wz->hovered_item)) {
 		return true;
 	}
@@ -4233,6 +4233,7 @@ WzWidget wz_dropdown(WzWidget parent,
 
 	const int h = 20;
 
+
 	if (*active)
 	{
 		WzWidget list = wz_widget(widget);
@@ -4248,15 +4249,9 @@ WzWidget wz_dropdown(WzWidget parent,
 			WzWidget label = wz_label(list, texts[i]);
 			wz_widget_set_color(label, WZ_WHITE);
 
-			if (wz_widget_is_hovered(label))
-			{
-				wz_widget_set_color(label, WZ_BLUE);
-			}
-
 			if (wz_widget_is_deactivating(label))
 			{
 				*selected_text = i;
-				*active = false;
 			}
 		}
 	}
@@ -4348,7 +4343,7 @@ void wz_label_list_sorted_raw(WzStr* item_names, unsigned int count, unsigned* i
 				hovered_label = widgets[i];
 				hovered_label_index = i;
 			}
-			else if (wz_widget_is_hovered(widgets[i]))
+			else if (wzrd_handle_is_hovered(widgets[i]))
 			{
 				// ...
 			}
