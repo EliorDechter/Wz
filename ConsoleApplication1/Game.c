@@ -727,7 +727,7 @@ void game_polygon_gui_do(wzrd_v2 mouse_pos, WzRect window,
 		};
 
 		WzWidget w = wzrd_handle_button(&active, rect, WZ_RED, str, parent);
-		wz_widget_set_layer(w, game_editor_layer_handle);
+		wz_widget_set_z(w, game_editor_layer_handle);
 		wz_widget_add_tag(w, &nodes[index]);
 
 		if (active)
@@ -831,7 +831,7 @@ void game_entity_gui_do(unsigned int scale_w, unsigned int scale_h, WzGui* wz, W
 			};
 			WzWidget blue_handle = wzrd_handle_button(&blue_button, rect, WZ_BLUE, str, background_box->handle);
 
-			wz_widget_set_layer(blue_handle, game_editor_layer_handle);
+			wz_widget_set_z(blue_handle, game_editor_layer_handle);
 
 			// Late logic
 			static float offset_x, offset_y;
@@ -869,7 +869,7 @@ void game_entity_gui_do(unsigned int scale_w, unsigned int scale_h, WzGui* wz, W
 				color,
 				name,
 				background_box->handle);
-			wz_widget_set_layer(green_handle, game_editor_layer_handle);
+			wz_widget_set_z(green_handle, game_editor_layer_handle);
 
 			if (green_button)
 			{

@@ -44,7 +44,7 @@
 #define GAP_WIDTH 24
 #define GAP_HEIGHT 24
 
-#define MAX_NUM_WIDGETS 512
+#define MAX_NUM_WIDGETS 32
 
 #define MAX_NUM_ITEMS 128
 #define MAX_NUM_CHILDREN 256
@@ -427,7 +427,6 @@ typedef struct
 
 	WzWidgetItem items[MAX_NUM_ITEMS];
 	unsigned int items_count;
-	unsigned int layer;
 	bool bring_to_front;
 	bool is_selected;
 
@@ -454,6 +453,7 @@ typedef struct
 	const char* secondary_tag;
 
 	unsigned x, y;
+	int z;
 
 	bool free_from_parent;
 	bool cull;
@@ -926,7 +926,7 @@ void wz_widget_set_margin_left(WzWidget widget, unsigned int pad);
 void wz_widget_set_margin_right(WzWidget widget, unsigned int pad);
 void wz_widget_set_max_constraints(WzWidget widget, unsigned int w, unsigned int h);
 void wz_widget_set_main_axis_size_min(WzWidget w);
-void wz_widget_set_layer(WzWidget handle, unsigned int layer);
+void wz_widget_set_z(WzWidget handle, unsigned int layer);
 void wz_widget_set_fixed_size(WzWidget widget, unsigned int w, unsigned int h);
 void wz_widget_set_layout(WzWidget handle, unsigned int layout);
 void wz_widget_set_stretch_factor(WzWidget handle, unsigned int strech_factor);

@@ -4173,8 +4173,7 @@ WzWidget wz_dropdown(WzWidget parent,
 		wz_widget_set_y(list, h);
 		wz_widget_set_z(list, 1);
 
-		WzWidget label = wz_label(list, wz_str_create("wowy"));
-		wz_widget_set_color(label, WZ_WHITE);
+		wz_label(list, wz_str_create("wowy"));
 	}
 
 	return widget;

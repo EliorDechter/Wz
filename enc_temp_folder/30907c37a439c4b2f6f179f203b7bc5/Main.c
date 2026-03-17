@@ -246,7 +246,6 @@ void render_text(SDL_Renderer* renderer, stbtt_fontinfo* font,
 			current_y += (int)((ascent - descent + lineGap) * scale);
 			continue;
 		}
-
 		// Get glyph bitmap
 		int width, height, xoff, yoff;
 		unsigned char* bitmap = stbtt_GetCodepointBitmap(font, 0, scale,
@@ -1045,7 +1044,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
 	static bool selected_text, active;
 	wz_dropdown(ib_window, strs, 3, &selected_text, &active);
-	wz_label(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+	wz_label(ib_window, wz_str_create("eu"));
 
 	WSDL_WzEnd(&gui_window);
 
