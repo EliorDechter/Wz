@@ -231,102 +231,37 @@ SDL_Texture* g_texture;
 
 void WSDL_WzEnd(WzGui* canvas)
 {
-	WzDrawCommandBuffer* buffer = &canvas->commands_buffer;
+	SDL_Renderer* renderer = g_sdl.renderer;
+	WzDrawList* dl = &canvas->draw_list;
 
-	for (int i = 0; i < buffer->count; ++i) {
-		WzDrawCommand command = buffer->commands[i];
+	if (dl->vtx_count == 0) return;
 
-		if (command.type == DrawCommandType_Rect) {
-			SDL_SetRenderDrawBlendMode(g_sdl.renderer, SDL_BLENDMODE_BLEND);
-			SDL_SetRenderDrawColor(g_sdl.renderer, WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color), WZ_COLOR_A(command.color));
-			SDL_FRect rect = { command.x, command.y, command.w, command.h };
-			SDL_RenderFillRect(g_sdl.renderer, &rect);
-		}
-		else if (command.type == DrawCommandType_Texture) {
-			SDL_Texture* tex = (SDL_Texture*)command.texture.data;
-			if (tex) {
-				// Apply color modulation (used for font atlas glyph tinting)
-				if (command.color) {
-					SDL_SetTextureColorMod(tex, WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color));
-					SDL_SetTextureAlphaMod(tex, WZ_COLOR_A(command.color));
-				}
-				SDL_FRect src = { command.src_rect.x, command.src_rect.y, command.src_rect.w, command.src_rect.h };
-				SDL_FRect dst = { command.x, command.y, command.w, command.h };
-				SDL_RenderTexture(g_sdl.renderer, tex, &src, &dst);
-				// Reset color mod
-				if (command.color) {
-					SDL_SetTextureColorMod(tex, 255, 255, 255);
-					SDL_SetTextureAlphaMod(tex, 255);
-				}
-			}
-		}
-		else if (command.type == DrawCommandType_Line)
-		{
-			PlatformLineDraw(command.line.x0, command.line.y0,
-				command.line.x1, command.line.y1,
-				WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color));
-		}
-		else if (command.type == DrawCommandType_LineDotted)
-		{
-			SDL_SetRenderDrawColor(g_sdl.renderer, WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color), 255);
+	// WzVertex layout matches SDL_Vertex exactly: {float x,y}, {float r,g,b,a}, {float u,v}
+	SDL_Vertex* sdl_verts = (SDL_Vertex*)dl->vertices;
 
-			int dx = abs(command.line.x1 - command.line.x0);
-			int sx = command.line.x0 < command.line.x1 ? 1 : -1;
-			int dy = -abs(command.line.y1 - command.line.y0);
-			int sy = command.line.y0 < command.line.y1 ? 1 : -1;
-			int error = dx + dy;
-			int x0 = command.line.x0;
-			int y0 = command.line.y0;
-			int x1 = command.line.x1;
-			int y1 = command.line.y1;
+	for (unsigned i = 0; i < dl->draw_call_count; ++i)
+	{
+		WzDrawCall* dc = &dl->draw_calls[i];
 
-			bool draw_dot = true;
+		if (dc->has_clip) {
+			SDL_Rect clip = { (int)dc->clip_rect.x, (int)dc->clip_rect.y,
+				(int)dc->clip_rect.w, (int)dc->clip_rect.h };
+			SDL_SetRenderClipRect(renderer, &clip);
+		} else {
+			SDL_SetRenderClipRect(renderer, NULL);
+		}
 
-			while (1)
-			{
-				if (draw_dot)
-				{
-					SDL_RenderPoint(g_sdl.renderer, (float)x0, (float)y0);
-				}
-				draw_dot = !draw_dot;
+		SDL_Texture* tex = (SDL_Texture*)dc->texture;
+		if (tex) {
+			SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+		}
 
-				int e2 = 2 * error;
-
-				if (e2 >= dy)
-				{
-					if (x0 == x1) break;
-					error = error + dy;
-					x0 = x0 + sx;
-				}
-
-				if (e2 <= dx)
-				{
-					if (y0 == y1) break;
-					error = error + dx;
-					y0 = y0 + sy;
-				}
-			}
-		}
-		else if (command.type == DrawCommandType_VerticalLine)
-		{
-			platform_draw_vertical_line((float)command.x, (float)command.y, (float)command.h);
-		}
-		else if (command.type == DrawCommandType_HorizontalLine)
-		{
-			platform_draw_horizontal_line((float)command.x, (float)command.y, (float)command.w);
-		}
-		else if (command.type == DrawCommandType_Clip)
-		{
-			SDL_Rect rect = { (int)command.x, (int)command.y, (int)command.w, (int)command.h };
-			SDL_SetRenderClipRect(g_sdl.renderer, &rect);
-		}
-		else if (command.type == DrawCommandType_StopClip)
-		{
-			SDL_SetRenderClipRect(g_sdl.renderer, 0);
-		}
+		SDL_RenderGeometry(renderer, tex,
+			sdl_verts, (int)dl->vtx_count,
+			dl->indices + dc->idx_offset, (int)dc->idx_count);
 	}
 
-	SDL_SetRenderClipRect(g_sdl.renderer, 0);
+	SDL_SetRenderClipRect(renderer, NULL);
 }
 
 // Upload a single-channel alpha bitmap to an RGBA SDL_Texture for font atlas rendering

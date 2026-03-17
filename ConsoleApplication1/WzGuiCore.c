@@ -73,6 +73,17 @@ void wz_font_load(unsigned font_id, const unsigned char* ttf_data, unsigned ttf_
 	font->descent = (float)desc * scale;
 	font->line_gap = (float)lg * scale;
 
+	// Write a solid white pixel into the bottom-right corner of the atlas.
+	// This pixel will be used as the "texture" for solid-color rects,
+	// so that rects and glyphs share the same texture and batch together.
+	// Since the atlas is a single-channel alpha bitmap, value 255 = fully opaque white.
+	font->atlas_bitmap[(font->atlas_h - 1) * font->atlas_w + (font->atlas_w - 1)] = 255;
+
+	// Store the UV coordinates that point to the center of that pixel.
+	// We use pixel-center (+ 0.5) to avoid sampling neighboring pixels.
+	font->white_uv_u = ((float)font->atlas_w - 0.5f) / (float)font->atlas_w;
+	font->white_uv_v = ((float)font->atlas_h - 0.5f) / (float)font->atlas_h;
+
 	if (font_id >= wz->fonts_count)
 		wz->fonts_count = font_id + 1;
 }
@@ -104,6 +115,174 @@ void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned fo
 
 	*out_w = x;
 	*out_h = font->pixel_height;
+}
+
+//==============================================================================
+// Draw List
+//==============================================================================
+
+void wz_dl_clear(WzDrawList* dl)
+{
+	dl->vtx_count = 0;
+	dl->idx_count = 0;
+	dl->draw_call_count = 0;
+	dl->_current_texture = NULL;
+	dl->_has_clip = false;
+	dl->_current_clip = (WzRect){ 0 };
+}
+
+static void wz_dl_ensure_draw_call(WzDrawList* dl, void* texture)
+{
+	// Check if we can continue the current draw call
+	if (dl->draw_call_count > 0) {
+		WzDrawCall* cur = &dl->draw_calls[dl->draw_call_count - 1];
+		if (cur->texture == texture && cur->has_clip == dl->_has_clip &&
+			(!dl->_has_clip || (cur->clip_rect.x == dl->_current_clip.x &&
+				cur->clip_rect.y == dl->_current_clip.y &&
+				cur->clip_rect.w == dl->_current_clip.w &&
+				cur->clip_rect.h == dl->_current_clip.h))) {
+			return; // can reuse current draw call
+		}
+	}
+
+	// Start a new draw call
+	assert(dl->draw_call_count < WZ_MAX_DRAW_CALLS);
+	WzDrawCall* dc = &dl->draw_calls[dl->draw_call_count++];
+	dc->texture = texture;
+	dc->idx_offset = dl->idx_count;
+	dc->idx_count = 0;
+	dc->clip_rect = dl->_current_clip;
+	dc->has_clip = dl->_has_clip;
+}
+
+void wz_dl_set_texture(WzDrawList* dl, void* texture)
+{
+	dl->_current_texture = texture;
+}
+
+void wz_dl_set_clip(WzDrawList* dl, WzRect rect)
+{
+	dl->_has_clip = true;
+	dl->_current_clip = rect;
+}
+
+void wz_dl_clear_clip(WzDrawList* dl)
+{
+	dl->_has_clip = false;
+	dl->_current_clip = (WzRect){ 0 };
+}
+
+void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
+	float u0, float v0, float u1, float v1, unsigned color)
+{
+	assert(dl->vtx_count + 4 <= WZ_MAX_VERTICES);
+	assert(dl->idx_count + 6 <= WZ_MAX_INDICES);
+
+	wz_dl_ensure_draw_call(dl, dl->_current_texture);
+
+	int base = (int)dl->vtx_count;
+
+	float cr = (float)((color >> 24) & 0xFF) / 255.0f;
+	float cg = (float)((color >> 16) & 0xFF) / 255.0f;
+	float cb = (float)((color >> 8) & 0xFF) / 255.0f;
+	float ca = (float)(color & 0xFF) / 255.0f;
+
+	// 4 vertices: top-left, top-right, bottom-right, bottom-left
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y,     cr, cg, cb, ca, u0, v0 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y,     cr, cg, cb, ca, u1, v0 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y + h, cr, cg, cb, ca, u1, v1 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y + h, cr, cg, cb, ca, u0, v1 };
+
+	// 6 indices: two triangles
+	dl->indices[dl->idx_count++] = base + 0;
+	dl->indices[dl->idx_count++] = base + 1;
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 3;
+	dl->indices[dl->idx_count++] = base + 0;
+
+	// Update current draw call's index count
+	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
+}
+
+void wz_dl_add_rect(WzDrawList* dl, float x, float y, float w, float h, unsigned color)
+{
+	// Use the font atlas with a white pixel UV so that rects and text
+	// share the same texture and batch into fewer draw calls.
+	// GPU computes: white_texel(1,1,1,1) * vertex_color = vertex_color.
+	if (wz->fonts_count > 0) {
+		WzFont* font = &wz->fonts[0];
+		wz_dl_set_texture(dl, font->atlas_texture.data);
+		wz_dl_add_quad(dl, x, y, w, h,
+			font->white_uv_u, font->white_uv_v,
+			font->white_uv_u, font->white_uv_v, color);
+	} else {
+		// Fallback before any font is loaded
+		wz_dl_set_texture(dl, NULL);
+		wz_dl_add_quad(dl, x, y, w, h, 0, 0, 0, 0, color);
+	}
+}
+
+void wz_dl_add_textured_quad(WzDrawList* dl, void* texture,
+	float dx, float dy, float dw, float dh,
+	float sx, float sy, float sw, float sh,
+	float tex_w, float tex_h, unsigned color)
+{
+	wz_dl_set_texture(dl, texture);
+	float u0 = sx / tex_w;
+	float v0 = sy / tex_h;
+	float u1 = (sx + sw) / tex_w;
+	float v1 = (sy + sh) / tex_h;
+	wz_dl_add_quad(dl, dx, dy, dw, dh, u0, v0, u1, v1, color);
+}
+
+void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
+	float thickness, unsigned color)
+{
+	float dx = x1 - x0;
+	float dy = y1 - y0;
+	float len = sqrtf(dx * dx + dy * dy);
+	if (len < 0.001f) return;
+
+	// Perpendicular normal scaled to half-thickness
+	float nx = (-dy / len) * (thickness * 0.5f);
+	float ny = (dx / len) * (thickness * 0.5f);
+
+	assert(dl->vtx_count + 4 <= WZ_MAX_VERTICES);
+	assert(dl->idx_count + 6 <= WZ_MAX_INDICES);
+
+	// Use white pixel in atlas (same trick as wz_dl_add_rect) to keep batching
+	void* tex = NULL;
+	float wu = 0, wv = 0;
+	if (wz->fonts_count > 0) {
+		WzFont* font = &wz->fonts[0];
+		tex = font->atlas_texture.data;
+		wu = font->white_uv_u;
+		wv = font->white_uv_v;
+	}
+	wz_dl_set_texture(dl, tex);
+	wz_dl_ensure_draw_call(dl, tex);
+
+	int base = (int)dl->vtx_count;
+
+	float cr = (float)((color >> 24) & 0xFF) / 255.0f;
+	float cg = (float)((color >> 16) & 0xFF) / 255.0f;
+	float cb = (float)((color >> 8) & 0xFF) / 255.0f;
+	float ca = (float)(color & 0xFF) / 255.0f;
+
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 + nx, y0 + ny, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 + nx, y1 + ny, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 - nx, y1 - ny, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 - nx, y0 - ny, cr, cg, cb, ca, wu, wv };
+
+	dl->indices[dl->idx_count++] = base + 0;
+	dl->indices[dl->idx_count++] = base + 1;
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 3;
+	dl->indices[dl->idx_count++] = base + 0;
+
+	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
 }
 
 bool wz_widget_is_equal(WzWidget a, WzWidget b)
@@ -1268,14 +1447,7 @@ bool wz_widget_is_hovered(WzWidget handle) {
 
 void wz_draw_rect_new(float x, float y, float w, float h, unsigned color)
 {
-	wz->commands_buffer.commands[wz->commands_buffer.count++] = (WzDrawCommand){
-			.type = DrawCommandType_Rect,
-			.x = x,
-			.y = y,
-			.w = w,
-			.h = h,
-			.color = color,
-	};
+	wz_dl_add_rect(&wz->draw_list, x, y, w, h, color);
 }
 
 
@@ -1666,63 +1838,14 @@ void wz_widget_set_constraints(WzWidget widget,
 void wz_draw(WzWidget* boxes_indices)
 {
 	WzWidgetData* widget;
-	WzDrawCommandBuffer* buffer = &wz->commands_buffer;
-	buffer->count = 0;
+	WzDrawList* dl = &wz->draw_list;
+	wz_dl_clear(dl);
 	unsigned int line_size;
-	WzWidget current_clip_widget;
 	WzWidgetItem item;
-
-	current_clip_widget.handle = 0;
 
 	for (int i = 0; i < wz->widgets_count; ++i)
 	{
 		widget = wz_widget_get(boxes_indices[i]);
-
-		// Clip widget
-		if (0)
-		{
-			if (wz_handle_is_valid(widget->clip_widget))
-			{
-				if (!wz_widget_is_equal(current_clip_widget, widget->clip_widget))
-				{
-					WzWidgetData* clip_box = wz_widget_get(widget->clip_widget);
-
-					WzRect clip_rect;
-					clip_rect.x = clip_box->actual_x + clip_box->pad_left;
-					clip_rect.y = clip_box->actual_y + clip_box->pad_top;
-					clip_rect.w = clip_box->actual_w -
-						clip_box->pad_left - clip_box->pad_right;
-					clip_rect.h = clip_box->actual_h -
-						clip_box->pad_top - clip_box->pad_bottom;
-
-					if (!clip_rect.w ||
-						!clip_rect.h ||
-						!(clip_rect.w > (widget->margin_left + widget->margin_right)) ||
-						!(clip_rect.h > (widget->margin_top + widget->margin_bottom)))
-					{
-						//printf("clip space too small for widget (%s %u)\n", widget->file, widget->line);
-						printf("erorr!\n");
-						continue;
-					}
-
-					// Append clip item
-					wz->commands_buffer.commands[wz->commands_buffer.count++] = (WzDrawCommand){
-						.type = DrawCommandType_Clip,
-						.x = clip_rect.x,
-						.y = clip_rect.y,
-						.w = clip_rect.w,
-						.h = clip_rect.h,
-					};
-				}
-			}
-			else
-			{
-				wz->commands_buffer.commands[wz->commands_buffer.count++] =
-					(WzDrawCommand){ .type = DrawCommandType_StopClip };
-			}
-
-			current_clip_widget = widget->clip_widget;
-		}
 
 		if (widget->cull)
 		{
@@ -1738,24 +1861,13 @@ void wz_draw(WzWidget* boxes_indices)
 		// Draw Widget background
 		if (wz->focused_widget_unique_id && widget->unique_id == wz->focused_widget_unique_id)
 		{
-			wz_draw_rect_new(widget->actual_x, widget->actual_y,
+			wz_dl_add_rect(dl, widget->actual_x, widget->actual_y,
 				widget->actual_w, widget->actual_h, WZ_RED);
 		}
 		else
 		{
-			wz_assert(buffer->count < MAX_NUM_DRAW_COMMANDS - 1);
-			wz_draw_rect(&buffer->commands[buffer->count],
-				(WzRect) {
-				.x = widget->actual_x,
-					.y = widget->actual_y,
-					.w = widget->actual_w,
-					.h = widget->actual_h,
-			},
-				widget->color,
-				widget->z,
-				widget->source);
-			buffer->commands[buffer->count].widget_index = widget->handle.handle;
-			buffer->count++;
+			wz_dl_add_rect(dl, widget->actual_x, widget->actual_y,
+				widget->actual_w, widget->actual_h, widget->color);
 		}
 
 		// Borders
@@ -1787,22 +1899,22 @@ void wz_draw(WzWidget* boxes_indices)
 
 			if (widget->border_style == WZ_BORDER_RAISED) {
 				// Draw top and left lines
-				wz_draw_rect_new(top0.x, top0.y, top0.w, top0.h, EGUI_WHITE2);
-				wz_draw_rect_new(left0.x, left0.y, left0.w, left0.h, EGUI_WHITE2);
-				wz_draw_rect_new(top1.x, top1.y, top1.w, top1.h, WZ_LIGHTGRAY);
-				wz_draw_rect_new(left1.x, left1.y, left1.w, left1.h, WZ_LIGHTGRAY);
+				wz_dl_add_rect(dl,top0.x, top0.y, top0.w, top0.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,left0.x, left0.y, left0.w, left0.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,top1.x, top1.y, top1.w, top1.h, WZ_LIGHTGRAY);
+				wz_dl_add_rect(dl,left1.x, left1.y, left1.w, left1.h, WZ_LIGHTGRAY);
 
 				// Draw bottom and right lines
-				wz_draw_rect_new(bottom0.x, bottom0.y, bottom0.w, bottom0.h, WZ_BLACK);
-				wz_draw_rect_new(right0.x, right0.y, right0.w, right0.h, WZ_BLACK);
-				wz_draw_rect_new(bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_GRAY);
-				wz_draw_rect_new(right1.x, right1.y, right1.w, right1.h, EGUI_GRAY);
+				wz_dl_add_rect(dl,bottom0.x, bottom0.y, bottom0.w, bottom0.h, WZ_BLACK);
+				wz_dl_add_rect(dl,right0.x, right0.y, right0.w, right0.h, WZ_BLACK);
+				wz_dl_add_rect(dl,bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_GRAY);
+				wz_dl_add_rect(dl,right1.x, right1.y, right1.w, right1.h, EGUI_GRAY);
 			}
 		else if (widget->border_style == WZ_BORDER_FLAT) {
-				wz_draw_rect_new(top0.x, top0.y, top0.w, top0.h, widget->border_color);
-				wz_draw_rect_new(left0.x, left0.y, left0.w, left0.h, widget->border_color);
-				wz_draw_rect_new(bottom0.x, bottom0.y, bottom0.w, bottom0.h, widget->border_color);
-				wz_draw_rect_new(right0.x, right0.y, right0.w, right0.h, widget->border_color);
+				wz_dl_add_rect(dl,top0.x, top0.y, top0.w, top0.h, widget->border_color);
+				wz_dl_add_rect(dl,left0.x, left0.y, left0.w, left0.h, widget->border_color);
+				wz_dl_add_rect(dl,bottom0.x, bottom0.y, bottom0.w, bottom0.h, widget->border_color);
+				wz_dl_add_rect(dl,right0.x, right0.y, right0.w, right0.h, widget->border_color);
 			}
 			else if (widget->border_style == WZ_BORDER_TAB) {
 				right0.y += 2;
@@ -1813,86 +1925,48 @@ void wz_draw(WzWidget* boxes_indices)
 				top0.w -= 3;
 
 				// Draw top and left lines
-				wz_draw_rect_new(top0.x, top0.y, top0.w, top0.h, EGUI_WHITE2);
-				wz_draw_rect_new(left0.x, left0.y, left0.w, left0.h, EGUI_WHITE2);
-				wz_draw_rect_new(top1.x, top1.y, top1.w, top1.h, WZ_LIGHTGRAY);
-				wz_draw_rect_new(left1.x, left1.y, left1.w, left1.h, WZ_LIGHTGRAY);
+				wz_dl_add_rect(dl,top0.x, top0.y, top0.w, top0.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,left0.x, left0.y, left0.w, left0.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,top1.x, top1.y, top1.w, top1.h, WZ_LIGHTGRAY);
+				wz_dl_add_rect(dl,left1.x, left1.y, left1.w, left1.h, WZ_LIGHTGRAY);
 
 				// Draw bottom and right lines
-				wz_draw_rect_new(right0.x, right0.y, right0.w, right0.h, WZ_BLACK);
-				wz_draw_rect_new(right1.x, right1.y, right1.w, right1.h, EGUI_GRAY);
-				wz_draw_rect_new(bottom1.x, bottom1.y, bottom1.w, bottom1.h, 0);
-				wz_draw_rect_new(bottom0.x, bottom0.y, bottom0.w, bottom0.h, 0);
+				wz_dl_add_rect(dl,right0.x, right0.y, right0.w, right0.h, WZ_BLACK);
+				wz_dl_add_rect(dl,right1.x, right1.y, right1.w, right1.h, EGUI_GRAY);
+				wz_dl_add_rect(dl,bottom1.x, bottom1.y, bottom1.w, bottom1.h, 0);
+				wz_dl_add_rect(dl,bottom0.x, bottom0.y, bottom0.w, bottom0.h, 0);
 
 				// ...
-				wz_draw_rect_new(top1.x + top1.w, top1.y, 1, 1, 0X000000FF | (unsigned)(0.5 * WZ_BLACK + 0.5 * WZ_LIGHTGRAY));
-				wz_draw_rect_new(top1.x, top1.y, 1, 1, EGUI_WHITE2);
+				wz_dl_add_rect(dl,top1.x + top1.w, top1.y, 1, 1, 0X000000FF | (unsigned)(0.5 * WZ_BLACK + 0.5 * WZ_LIGHTGRAY));
+				wz_dl_add_rect(dl,top1.x, top1.y, 1, 1, EGUI_WHITE2);
 			}
 			else if (widget->border_style == WZ_BORDER_SUNKEN) {
 				// Draw top and left lines
-				wz_draw_rect_new(top0.x, top0.y, top0.w, top0.h, WZ_BLACK);
-				wz_draw_rect_new(left0.x, left0.y, left0.w, left0.h, WZ_BLACK);
-				wz_draw_rect_new(top1.x, top1.y, top1.w, top1.h, EGUI_GRAY);
-				wz_draw_rect_new(left1.x, left1.y, left1.w, left1.h, EGUI_GRAY);
+				wz_dl_add_rect(dl,top0.x, top0.y, top0.w, top0.h, WZ_BLACK);
+				wz_dl_add_rect(dl,left0.x, left0.y, left0.w, left0.h, WZ_BLACK);
+				wz_dl_add_rect(dl,top1.x, top1.y, top1.w, top1.h, EGUI_GRAY);
+				wz_dl_add_rect(dl,left1.x, left1.y, left1.w, left1.h, EGUI_GRAY);
 
 				// Draw bottom and right lines
-				wz_draw_rect_new(bottom0.x, bottom0.y, bottom0.w, bottom0.h, EGUI_WHITE2);
-				wz_draw_rect_new(right0.x, right0.y, right0.w, right0.h, EGUI_WHITE2);
-				wz_draw_rect_new(bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_LIGHTESTGRAY);
-				wz_draw_rect_new(right1.x, right1.y, right1.w, right1.h, EGUI_LIGHTESTGRAY);
+				wz_dl_add_rect(dl,bottom0.x, bottom0.y, bottom0.w, bottom0.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,right0.x, right0.y, right0.w, right0.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_LIGHTESTGRAY);
+				wz_dl_add_rect(dl,right1.x, right1.y, right1.w, right1.h, EGUI_LIGHTESTGRAY);
 			}
 			else if (widget->border_style == WZ_BORDER_BOTTOM_LINE) {
-				wz_draw_rect_new(bottom0.x, bottom0.y, bottom0.w, bottom0.h, EGUI_WHITE2);
-				wz_draw_rect_new(bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_GRAY);
+				wz_dl_add_rect(dl,bottom0.x, bottom0.y, bottom0.w, bottom0.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,bottom1.x, bottom1.y, bottom1.w, bottom1.h, EGUI_GRAY);
 			}
 			else if (widget->border_style == WZ_BORDER_LEFT_LINE) {
-				wz_draw_rect_new(left0.x, left0.y, left0.w, left0.h, EGUI_GRAY);
-				wz_draw_rect_new(left1.x, left1.y, left1.w, left1.h, EGUI_WHITE2);
+				wz_dl_add_rect(dl,left0.x, left0.y, left0.w, left0.h, EGUI_GRAY);
+				wz_dl_add_rect(dl,left1.x, left1.y, left1.w, left1.h, EGUI_WHITE2);
 			}
 		}
 
 		// Draw content
-		int content_start = buffer->count;
-
-		// Clip content
-		//if (widget->clip_content)
-		if (0)
-		{
-			WzWidgetData* clip_box = widget;
-
-			WzRect clip_rect;
-			clip_rect.x = clip_box->actual_x + clip_box->pad_left;
-			clip_rect.y = clip_box->actual_y + clip_box->pad_top;
-			clip_rect.w = clip_box->actual_w -
-				clip_box->pad_left - clip_box->pad_right;
-			clip_rect.h = clip_box->actual_h -
-				clip_box->pad_top - clip_box->pad_bottom;
-
-			if (!clip_rect.w ||
-				!clip_rect.h ||
-				!(clip_rect.w > (widget->margin_left + widget->margin_right)) ||
-				!(clip_rect.h > (widget->margin_top + widget->margin_bottom)))
-			{
-				//printf("clip space too small for widget (%s %u)\n", widget->file, widget->line);
-				printf("erorr!\n");
-				continue;
-			}
-
-			// Append clip item
-			wz->commands_buffer.commands[wz->commands_buffer.count++] = (WzDrawCommand){
-				.type = DrawCommandType_Clip,
-				.x = clip_rect.x,
-				.y = clip_rect.y,
-				.w = clip_rect.w,
-				.h = clip_rect.h,
-			};
-
-			current_clip_widget = widget->handle;
-		}
 
 		for (int j = 0; j < widget->items_count; ++j)
 		{
-			wz_assert(buffer->count < MAX_NUM_DRAW_COMMANDS - 1);
 			item = widget->items[j];
 
 			if (item.size.x == 0)
@@ -1916,6 +1990,10 @@ void wz_draw(WzWidget* boxes_indices)
 			{
 				item_dest_rect.y = widget->actual_y + (widget->actual_h - item.h - widget->pad_bottom - widget->pad_top) / 2;
 			}
+
+			// Apply item margins
+			item_dest_rect.x += item.margin_left;
+			item_dest_rect.y += item.margin_top;
 
 			// String item — emit per-glyph textured quads
 			if (item.type == WZ_WIDGET_ITEM_TYPE_STRING)
@@ -1955,18 +2033,13 @@ void wz_draw(WzWidget* boxes_indices)
 						float glyph_h = g->y1 - g->y0;
 
 						if (glyph_w > 0 && glyph_h > 0) {
-							wz_assert(buffer->count < MAX_NUM_DRAW_COMMANDS - 1);
-							buffer->commands[buffer->count++] = (WzDrawCommand){
-								.type = DrawCommandType_Texture,
-								.x = cursor_x + g->xoff,
-								.y = baseline_y + g->yoff,
-								.w = glyph_w,
-								.h = glyph_h,
-								.src_rect = (WzRect){ g->x0, g->y0, glyph_w, glyph_h },
-								.texture = font->atlas_texture,
-								.color = widget->font_color,
-								.z = widget->z
-							};
+							wz_dl_add_textured_quad(dl,
+								font->atlas_texture.data,
+								cursor_x + g->xoff, baseline_y + g->yoff,
+								glyph_w, glyph_h,
+								g->x0, g->y0, glyph_w, glyph_h,
+								(float)font->atlas_w, (float)font->atlas_h,
+								widget->font_color);
 						}
 
 						cursor_x += g->xadvance;
@@ -1977,220 +2050,124 @@ void wz_draw(WzWidget* boxes_indices)
 			// Texture item
 			if (item.type == ItemType_Texture)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_Texture,
-					.rotation_angle = widget->rotation,
-					.x = widget->actual_x,
-					.y = widget->actual_y,
-					.w = widget->actual_w,
-					.h = widget->actual_h,
-					.src_rect = (WzRect) {0, 0, item.val.texture.w, item.val.texture.h},
-					.texture = item.val.texture,
-					.z = widget->z
-				};
+				wz_dl_add_textured_quad(dl,
+					item.val.texture.data,
+					widget->actual_x, widget->actual_y,
+					widget->actual_w, widget->actual_h,
+					0, 0, item.val.texture.w, item.val.texture.h,
+					item.val.texture.w, item.val.texture.h,
+					0xFFFFFFFF);
 			}
 
 			// Rect item
 			if (item.type == WZ_ITEM_TYPE_RECT)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_Rect,
-					.x = item_dest_rect.x,
-					.y = item_dest_rect.y,
-					.w = item_dest_rect.w,
-					.h = item_dest_rect.h,
-					.color = item.color,
-					.z = widget->z
-				};
-
+				wz_dl_add_rect(dl, item_dest_rect.x, item_dest_rect.y,
+					item_dest_rect.w, item_dest_rect.h, item.color);
 			}
 			else if (item.type == ItemType_RectAbsolute)
 			{
-
 				item_dest_rect.x = item.x;
 				item_dest_rect.y = item.y;
 				item_dest_rect.w = item.w;
 				item_dest_rect.h = item.h;
 
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_Rect,
-					.x = item_dest_rect.x,
-					.y = item_dest_rect.y,
-					.w = item_dest_rect.w,
-					.h = item_dest_rect.h,
-					.color = item.color,
-					.z = widget->z
-				};
-
-				wz_assert(buffer->commands[buffer->count - 1].w > 0);
-				wz_assert(buffer->commands[buffer->count - 1].h > 0);
+				wz_assert(item_dest_rect.w > 0);
+				wz_assert(item_dest_rect.h > 0);
+				wz_dl_add_rect(dl, item_dest_rect.x, item_dest_rect.y,
+					item_dest_rect.w, item_dest_rect.h, item.color);
 			}
 
 			// Line items
 			if (item.type == ItemType_Line) {
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_Line,
-					.x = widget->actual_w + item.val.rect.x,
-					.y = widget->actual_y + item.val.rect.y,
-					.w = widget->actual_w + item.val.rect.w,
-					.h = widget->actual_y + item.val.rect.h,
-					.color = item.color,
-					.z = widget->z
-				};
+				// Line from (x,y) to (w,h) — these are endpoint coords, not size
+				float x0 = widget->actual_w + item.val.rect.x;
+				float y0 = widget->actual_y + item.val.rect.y;
+				float x1 = widget->actual_w + item.val.rect.w;
+				float y1 = widget->actual_y + item.val.rect.h;
+				wz_dl_add_line(dl, x0, y0, x1, y1, 1.0f, item.color);
 			}
 			else if (item.type == ItemType_HorizontalDottedLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_HorizontalLine,
-					.x = item_dest_rect.x,
-					.y = item_dest_rect.y,
-					.w = item_dest_rect.w,
-					.h = item_dest_rect.h,
-					.z = widget->z
-				};
+				// Dotted horizontal line: emit 2px dots every 4px
+				float y = item_dest_rect.y;
+				for (float dx = item_dest_rect.x; dx < item_dest_rect.w; dx += 4)
+					wz_dl_add_rect(dl, dx, y, 2, 1, 0x808080FF);
 			}
 			else if (item.type == ItemType_LeftHorizontalDottedLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_HorizontalLine,
-					.x = widget->actual_x,
-					.y = widget->actual_y + widget->actual_h / 2,
-					.w = widget->actual_x + widget->actual_w / 2,
-					.h = widget->actual_y + widget->actual_h / 2,
-					.z = widget->z
-				};
+				float y = widget->actual_y + widget->actual_h / 2;
+				float x_start = widget->actual_x;
+				float x_end = widget->actual_x + widget->actual_w / 2;
+				for (float dx = x_start; dx < x_end; dx += 4)
+					wz_dl_add_rect(dl, dx, y, 2, 1, 0x808080FF);
 			}
 			else if (item.type == ItemType_RightHorizontalDottedLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_HorizontalLine,
-					.x = widget->actual_x + widget->actual_w / 2,
-					.y = widget->actual_y + widget->actual_h / 2,
-					.w = widget->actual_x + widget->actual_w,
-					.h = widget->actual_y + widget->actual_h / 2,
-					.z = widget->z
-				};
+				float y = widget->actual_y + widget->actual_h / 2;
+				float x_start = widget->actual_x + widget->actual_w / 2;
+				float x_end = widget->actual_x + widget->actual_w;
+				for (float dx = x_start; dx < x_end; dx += 4)
+					wz_dl_add_rect(dl, dx, y, 2, 1, 0x808080FF);
 			}
 			else if (item.type == ItemType_VerticalDottedLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_VerticalLine,
-					.x = item_dest_rect.x,
-					.y = item_dest_rect.y,
-					.w = item_dest_rect.w,
-					.h = item_dest_rect.h,
-					.z = widget->z
-				};
+				// Dotted vertical line
+				float x = item_dest_rect.x;
+				for (float dy = item_dest_rect.y; dy < item_dest_rect.h; dy += 4)
+					wz_dl_add_rect(dl, x, dy, 1, 2, 0x808080FF);
 			}
 			else if (item.type == ItemType_VerticalLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_VerticalLine,
-					.x = item_dest_rect.x,
-					.y = item_dest_rect.y,
-					.w = item_dest_rect.w,
-					.h = item_dest_rect.h,
-					.z = widget->z
-				};
+				// Solid vertical line as thin rect
+				wz_dl_add_rect(dl, item_dest_rect.x, item_dest_rect.y,
+					1, item_dest_rect.h - item_dest_rect.y, 0x808080FF);
 			}
 			else if (item.type == ItemType_LineAbsolute)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_Line,
-					.line = item.val.line,
-					.z = widget->z
-				};
+				wz_dl_add_line(dl, item.val.line.x0, item.val.line.y0,
+					item.val.line.x1, item.val.line.y1, 1.0f, 0x000000FF);
 			}
 			else if (item.type == ItemType_DottedLineAbsolute)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_LineDotted,
-					.line = item.val.line,
-					.z = widget->z
-				};
+				// Dotted line between two absolute points — approximate with dots
+				float dx = item.val.line.x1 - item.val.line.x0;
+				float dy = item.val.line.y1 - item.val.line.y0;
+				float len = sqrtf(dx * dx + dy * dy);
+				if (len > 0) {
+					float nx = dx / len;
+					float ny = dy / len;
+					for (float t = 0; t < len; t += 4) {
+						wz_dl_add_rect(dl,
+							item.val.line.x0 + nx * t,
+							item.val.line.y0 + ny * t,
+							2, 2, 0x808080FF);
+					}
+				}
 			}
 			else if (item.type == ItemType_HorizontalLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_HorizontalLine,
-					.x = item_dest_rect.x,
-					.y = item_dest_rect.y,
-					.w = item_dest_rect.w,
-					.h = item_dest_rect.h,
-					.z = widget->z
-				};
+				// Solid horizontal line as thin rect
+				wz_dl_add_rect(dl, item_dest_rect.x, item_dest_rect.y,
+					item_dest_rect.w - item_dest_rect.x, 1, 0x808080FF);
 			}
 			else if (item.type == ItemType_TopVerticalDottedLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_VerticalLine,
-					.x = widget->actual_w + widget->actual_w / 2,
-					.y = widget->actual_y,
-					.w = widget->actual_w + widget->actual_w / 2 + widget->actual_w,
-					.h = widget->actual_y + widget->actual_h / 2,
-					.z = widget->z
-				};
+				float x = widget->actual_w + widget->actual_w / 2;
+				float y_start = widget->actual_y;
+				float y_end = widget->actual_y + widget->actual_h / 2;
+				for (float dy = y_start; dy < y_end; dy += 4)
+					wz_dl_add_rect(dl, x, dy, 1, 2, 0x808080FF);
 			}
 			else if (item.type == ItemType_BottomVerticalDottedLine)
 			{
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = DrawCommandType_VerticalLine,
-					.x = widget->actual_w + widget->actual_w / 2,
-					.y = widget->actual_y + widget->actual_h / 2,
-					.w = widget->actual_w + widget->actual_w / 2,
-					.h = widget->actual_y + widget->actual_h,
-					.z = widget->z
-				};
+				float x = widget->actual_w + widget->actual_w / 2;
+				float y_start = widget->actual_y + widget->actual_h / 2;
+				float y_end = widget->actual_y + widget->actual_h;
+				for (float dy = y_start; dy < y_end; dy += 4)
+					wz_dl_add_rect(dl, x, dy, 1, 2, 0x808080FF);
 			}
 
-			// Apply item margins
-			buffer->commands[buffer->count - 1].x += item.margin_left;
-			buffer->commands[buffer->count - 1].y += item.margin_top;
-
-			wz_assert(buffer->commands[buffer->count - 1].w >= 0);
-			wz_assert(buffer->commands[buffer->count - 1].h >= 0);
-		}
-
-
-
-		// Apply transformations to content commands in-place
-		if (0) {
-			WzWidgetData* current_widget = &widget;
-
-			for (int cmd_idx = content_start; cmd_idx < buffer->count; ++cmd_idx)
-			{
-				WzDrawCommand* cmd = &buffer->commands[cmd_idx];
-
-				cmd->source = widget->source;
-
-				// Scale
-				cmd->w *= current_widget->world_scale[0];
-				cmd->h *= current_widget->world_scale[1];
-
-				// Rotate position
-				float x = cmd->x;
-				float y = cmd->y;
-				cmd->x = x * cos(current_widget->world_rotation) -
-					y * sin(current_widget->world_rotation);
-				cmd->y = x * sin(current_widget->world_rotation) +
-					y * cos(current_widget->world_rotation);
-
-				// Translate
-				cmd->x += current_widget->world_pos[0];
-				cmd->y += current_widget->world_pos[1];
-
-#if 1
-				// Apply camera offset (for all widgets)
-				cmd->x -= wz->camera_x;
-				cmd->y -= wz->camera_y;
-
-				// Apply zoom (for all widgets)
-				cmd->x *= (1 + wz->zoom_factor);
-				cmd->y *= (1 + wz->zoom_factor);
-				cmd->w *= (1 + wz->zoom_factor);
-				cmd->h *= (1 + wz->zoom_factor);
-#endif
-			}
 		}
 
 #endif

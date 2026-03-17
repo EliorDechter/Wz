@@ -276,6 +276,7 @@ typedef struct WzFont {
 	float ascent, descent, line_gap; // scaled font metrics
 	int first_char;           // first baked codepoint (typically 32)
 	int num_chars;            // number of baked codepoints (typically 96)
+	float white_uv_u, white_uv_v; // UV coords of a solid white pixel in the atlas
 } WzFont;
 
 typedef enum ItemType {
@@ -402,6 +403,44 @@ typedef struct WzDrawCommandBuffer {
 	WzDrawCommand commands[MAX_NUM_DRAW_COMMANDS];
 	int count;
 } WzDrawCommandBuffer;
+
+//==============================================================================
+// VERTEX BUFFER DRAW LIST
+//==============================================================================
+
+#define WZ_MAX_VERTICES (MAX_NUM_DRAW_COMMANDS * 4)
+#define WZ_MAX_INDICES  (MAX_NUM_DRAW_COMMANDS * 6)
+#define WZ_MAX_DRAW_CALLS 256
+
+typedef struct WzVertex {
+	float x, y;       // screen position (matches SDL_FPoint)
+	float r, g, b, a; // color (matches SDL_FColor)
+	float u, v;       // texture coordinates (matches SDL_FPoint)
+} WzVertex;
+
+typedef struct WzDrawCall {
+	void* texture;           // SDL_Texture* or NULL for solid geometry
+	unsigned idx_offset;     // start index in the index buffer
+	unsigned idx_count;      // number of indices for this call
+	WzRect clip_rect;        // scissor rect
+	bool has_clip;
+} WzDrawCall;
+
+typedef struct WzDrawList {
+	WzVertex vertices[WZ_MAX_VERTICES];
+	unsigned vtx_count;
+
+	int indices[WZ_MAX_INDICES];
+	unsigned idx_count;
+
+	WzDrawCall draw_calls[WZ_MAX_DRAW_CALLS];
+	unsigned draw_call_count;
+
+	// Current state for batching
+	void* _current_texture;
+	WzRect _current_clip;
+	bool _has_clip;
+} WzDrawList;
 
 typedef struct WzSource
 {
@@ -752,6 +791,7 @@ typedef struct WzGui
 	int styles_count;
 	wzrd_cursor cursor;
 	WzDrawCommandBuffer commands_buffer;
+	WzDrawList draw_list;
 
 	WzWidgetData cached_boxes[MAX_NUM_WIDGETS];
 	int cached_boxes_count;
@@ -922,6 +962,21 @@ typedef struct WzLogMessage
 // FUNCTION DECLARATIONS
 //==============================================================================
 
+
+// Draw list API
+void wz_dl_clear(WzDrawList* dl);
+void wz_dl_set_texture(WzDrawList* dl, void* texture);
+void wz_dl_set_clip(WzDrawList* dl, WzRect rect);
+void wz_dl_clear_clip(WzDrawList* dl);
+void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
+	float u0, float v0, float u1, float v1, unsigned color);
+void wz_dl_add_rect(WzDrawList* dl, float x, float y, float w, float h, unsigned color);
+void wz_dl_add_textured_quad(WzDrawList* dl, void* texture,
+	float dx, float dy, float dw, float dh,
+	float sx, float sy, float sw, float sh,
+	float tex_w, float tex_h, unsigned color);
+void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
+	float thickness, unsigned color);
 
 // Font atlas API
 void wz_font_load(unsigned font_id, const unsigned char* ttf_data, unsigned ttf_size, float pixel_height);
