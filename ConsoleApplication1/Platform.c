@@ -231,42 +231,45 @@ SDL_Texture* g_texture;
 
 void WSDL_WzEnd(WzGui* canvas)
 {
-#if 0
 	WzDrawCommandBuffer* buffer = &canvas->commands_buffer;
 
 	for (int i = 0; i < buffer->count; ++i) {
 		WzDrawCommand command = buffer->commands[i];
 
 		if (command.type == DrawCommandType_Rect) {
+			SDL_SetRenderDrawBlendMode(g_sdl.renderer, SDL_BLENDMODE_BLEND);
 			SDL_SetRenderDrawColor(g_sdl.renderer, WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color), WZ_COLOR_A(command.color));
-			SDL_FRect rect = { (float)command.dest_rect.x, (float)command.dest_rect.y, (float)command.dest_rect.w, (float)command.dest_rect.h };
+			SDL_FRect rect = { command.x, command.y, command.w, command.h };
 			SDL_RenderFillRect(g_sdl.renderer, &rect);
 		}
 		else if (command.type == DrawCommandType_Texture) {
-			PlatformTextureDrawFromSource((PlatformTexture) { command.texture.data, .h = command.texture.h, .w = command.texture.w },
-				(PlatformRect) {
-				(float)command.dest_rect.x, (float)command.dest_rect.y, (float)command.dest_rect.w, (float)command.dest_rect.h
-			}, (PlatformRect) { (float)command.src_rect.x, (float)command.src_rect.y, (float)command.src_rect.w, (float)command.src_rect.h }, (platform_color) { 255, 255, 255, 255 });
-		}
-		else if (command.type == WZ_DRAW_COMMAND_TYPE_TEXT) {
-			#if 0
-			PlatformTextDraw(command.str.str, (float)command.dest_rect.x, (float)command.dest_rect.y,
-				WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color), WZ_COLOR_A(command.color));
-#endif
+			SDL_Texture* tex = (SDL_Texture*)command.texture.data;
+			if (tex) {
+				// Apply color modulation (used for font atlas glyph tinting)
+				if (command.color) {
+					SDL_SetTextureColorMod(tex, WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color));
+					SDL_SetTextureAlphaMod(tex, WZ_COLOR_A(command.color));
+				}
+				SDL_FRect src = { command.src_rect.x, command.src_rect.y, command.src_rect.w, command.src_rect.h };
+				SDL_FRect dst = { command.x, command.y, command.w, command.h };
+				SDL_RenderTexture(g_sdl.renderer, tex, &src, &dst);
+				// Reset color mod
+				if (command.color) {
+					SDL_SetTextureColorMod(tex, 255, 255, 255);
+					SDL_SetTextureAlphaMod(tex, 255);
+				}
+			}
 		}
 		else if (command.type == DrawCommandType_Line)
 		{
-			SDL_SetRenderDrawColor(g_sdl.renderer, 0, 0, 0, 255);
-
-			PlatformLineDraw((float)command.line.x0, (float)command.line.y0,
-				(float)command.line.x1, (float)command.line.y1,
+			PlatformLineDraw(command.line.x0, command.line.y0,
+				command.line.x1, command.line.y1,
 				WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color));
 		}
 		else if (command.type == DrawCommandType_LineDotted)
 		{
-			SDL_SetRenderDrawColor(g_sdl.renderer, 0, 0, 0, 255);
+			SDL_SetRenderDrawColor(g_sdl.renderer, WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color), 255);
 
-			// Bresenheim
 			int dx = abs(command.line.x1 - command.line.x0);
 			int sx = command.line.x0 < command.line.x1 ? 1 : -1;
 			int dy = -abs(command.line.y1 - command.line.y0);
@@ -277,36 +280,28 @@ void WSDL_WzEnd(WzGui* canvas)
 			int x1 = command.line.x1;
 			int y1 = command.line.y1;
 
-			bool draw = true;
+			bool draw_dot = true;
 
 			while (1)
 			{
-				if (draw)
+				if (draw_dot)
 				{
-					SDL_RenderPoint(g_sdl.renderer, x0, y0);
+					SDL_RenderPoint(g_sdl.renderer, (float)x0, (float)y0);
 				}
-				draw = !draw;
+				draw_dot = !draw_dot;
 
 				int e2 = 2 * error;
 
 				if (e2 >= dy)
 				{
-					if (x0 == x1)
-					{
-						break;
-					}
-
+					if (x0 == x1) break;
 					error = error + dy;
 					x0 = x0 + sx;
 				}
 
 				if (e2 <= dx)
 				{
-					if (y0 == y1)
-					{
-						break;
-					}
-
+					if (y0 == y1) break;
 					error = error + dx;
 					y0 = y0 + sy;
 				}
@@ -314,26 +309,47 @@ void WSDL_WzEnd(WzGui* canvas)
 		}
 		else if (command.type == DrawCommandType_VerticalLine)
 		{
-			platform_draw_vertical_line((float)command.dest_rect.x, (float)command.dest_rect.y, (float)command.dest_rect.h);
+			platform_draw_vertical_line((float)command.x, (float)command.y, (float)command.h);
 		}
 		else if (command.type == DrawCommandType_HorizontalLine)
 		{
-			platform_draw_horizontal_line((float)command.dest_rect.x, (float)command.dest_rect.y, (float)command.dest_rect.w);
+			platform_draw_horizontal_line((float)command.x, (float)command.y, (float)command.w);
 		}
 		else if (command.type == DrawCommandType_Clip)
 		{
-			SDL_Rect rect = { (int)command.dest_rect.x, (int)command.dest_rect.y, (int)command.dest_rect.w, (int)command.dest_rect.h };
+			SDL_Rect rect = { (int)command.x, (int)command.y, (int)command.w, (int)command.h };
 			SDL_SetRenderClipRect(g_sdl.renderer, &rect);
 		}
 		else if (command.type == DrawCommandType_StopClip)
 		{
 			SDL_SetRenderClipRect(g_sdl.renderer, 0);
 		}
-
 	}
 
 	SDL_SetRenderClipRect(g_sdl.renderer, 0);
-#endif
+}
+
+// Upload a single-channel alpha bitmap to an RGBA SDL_Texture for font atlas rendering
+static SDL_Texture* wz_upload_font_atlas(SDL_Renderer* renderer, const unsigned char* bitmap, int w, int h)
+{
+	SDL_Texture* tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
+	assert(tex);
+
+	// Convert 8-bit alpha to RGBA (white + alpha)
+	unsigned char* rgba = (unsigned char*)malloc(w * h * 4);
+	for (int i = 0; i < w * h; i++) {
+		rgba[i * 4 + 0] = 255;
+		rgba[i * 4 + 1] = 255;
+		rgba[i * 4 + 2] = 255;
+		rgba[i * 4 + 3] = bitmap[i];
+	}
+
+	SDL_UpdateTexture(tex, NULL, rgba, w * 4);
+	free(rgba);
+
+	SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+	return tex;
 }
 
 /* This function runs once at startup. */
@@ -359,13 +375,31 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 
 	load_tree();
 
-	TTF_Init();
+	// Initialize GUI and load font atlas
+	wz_set_gui(&editor_gui);
 
-	g_sdl.font = TTF_OpenFont("C:\\Windows\\Fonts\\Arial.ttf", 16);
-	assert(g_sdl.font);
+	{
+		// Read TTF file
+		SDL_IOStream* io = SDL_IOFromFile("C:\\Windows\\Fonts\\Arial.ttf", "rb");
+		assert(io);
+		Sint64 ttf_size = SDL_GetIOSize(io);
+		unsigned char* ttf_data = (unsigned char*)malloc((size_t)ttf_size);
+		SDL_ReadIO(io, ttf_data, (size_t)ttf_size);
+		SDL_CloseIO(io);
 
-	g_sdl.text_engine = TTF_CreateRendererTextEngine(g_sdl.renderer);
-	assert(g_sdl.text_engine);
+		// Bake font atlas
+		wz_font_load(0, ttf_data, (unsigned)ttf_size, 16.0f);
+		free(ttf_data);
+
+		// Upload atlas bitmap to GPU texture
+		WzFont* font = &editor_gui.fonts[0];
+		SDL_Texture* atlas_tex = wz_upload_font_atlas(g_sdl.renderer, font->atlas_bitmap, font->atlas_w, font->atlas_h);
+		free(font->atlas_bitmap);
+		font->atlas_bitmap = NULL;
+
+		WzTexture wz_atlas = { .data = atlas_tex, .w = (float)font->atlas_w, .h = (float)font->atlas_h };
+		wz_font_set_atlas_texture(0, wz_atlas);
+	}
 
 	game_init();
 

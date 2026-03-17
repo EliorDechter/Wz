@@ -10,9 +10,101 @@
 #define STB_TEXTEDIT_IMPLEMENTATION
 #include "stb_textedit.h"
 
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
+
 #define STACK_MAX_DEPTH 64
 
 static WzGui* wz;
+
+//==============================================================================
+// Font Atlas
+//==============================================================================
+
+void wz_font_load(unsigned font_id, const unsigned char* ttf_data, unsigned ttf_size, float pixel_height)
+{
+	(void)ttf_size;
+	assert(font_id < 4);
+	WzFont* font = &wz->fonts[font_id];
+	font->pixel_height = pixel_height;
+	font->first_char = 32;
+	font->num_chars = 96; // 32..127
+
+	font->atlas_w = 512;
+	font->atlas_h = 512;
+	font->atlas_bitmap = (unsigned char*)malloc(font->atlas_w * font->atlas_h);
+
+	stbtt_bakedchar baked_chars[96];
+	int result = stbtt_BakeFontBitmap(ttf_data, 0, pixel_height,
+		font->atlas_bitmap, font->atlas_w, font->atlas_h,
+		font->first_char, font->num_chars, baked_chars);
+
+	// If result is negative, atlas too small — try 1024x1024
+	if (result <= 0) {
+		free(font->atlas_bitmap);
+		font->atlas_w = 1024;
+		font->atlas_h = 1024;
+		font->atlas_bitmap = (unsigned char*)malloc(font->atlas_w * font->atlas_h);
+		stbtt_BakeFontBitmap(ttf_data, 0, pixel_height,
+			font->atlas_bitmap, font->atlas_w, font->atlas_h,
+			font->first_char, font->num_chars, baked_chars);
+	}
+
+	// Copy baked char metrics into WzGlyph array
+	for (int i = 0; i < font->num_chars; i++) {
+		int ci = font->first_char + i;
+		WzGlyph* g = &font->glyphs[ci];
+		g->x0 = (float)baked_chars[i].x0;
+		g->y0 = (float)baked_chars[i].y0;
+		g->x1 = (float)baked_chars[i].x1;
+		g->y1 = (float)baked_chars[i].y1;
+		g->xoff = baked_chars[i].xoff;
+		g->yoff = baked_chars[i].yoff;
+		g->xadvance = baked_chars[i].xadvance;
+	}
+
+	// Extract scaled font metrics
+	stbtt_fontinfo info;
+	stbtt_InitFont(&info, ttf_data, stbtt_GetFontOffsetForIndex(ttf_data, 0));
+	int asc, desc, lg;
+	stbtt_GetFontVMetrics(&info, &asc, &desc, &lg);
+	float scale = stbtt_ScaleForPixelHeight(&info, pixel_height);
+	font->ascent = (float)asc * scale;
+	font->descent = (float)desc * scale;
+	font->line_gap = (float)lg * scale;
+
+	if (font_id >= wz->fonts_count)
+		wz->fonts_count = font_id + 1;
+}
+
+void wz_font_set_atlas_texture(unsigned font_id, WzTexture texture)
+{
+	assert(font_id < 4);
+	wz->fonts[font_id].atlas_texture = texture;
+}
+
+void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h)
+{
+	if (!str || end <= start) {
+		*out_w = 0;
+		*out_h = 0;
+		return;
+	}
+
+	assert(font_id < wz->fonts_count);
+	WzFont* font = &wz->fonts[font_id];
+	float x = 0;
+
+	for (unsigned i = start; i < end; i++) {
+		unsigned char c = (unsigned char)str[i];
+		if (c < (unsigned)font->first_char || c >= (unsigned)(font->first_char + font->num_chars))
+			continue;
+		x += font->glyphs[c].xadvance;
+	}
+
+	*out_w = x;
+	*out_h = font->pixel_height;
+}
 
 bool wz_widget_is_equal(WzWidget a, WzWidget b)
 {
@@ -1554,20 +1646,6 @@ void wz_widget_set_layout(WzWidget handle, unsigned int layout_type)
 	d->layout_chunk = layout_idx;
 }
 
-void wz_draw_text(WzDrawCommand* out_command, const char* string, WzRect rect)
-{
-	*out_command = (WzDrawCommand){
-		.type = WZ_DRAW_COMMAND_TYPE_TEXT,
-		.str = wz_str_create(string),
-		.x = rect.x,
-		.y = rect.y,
-		.w = rect.w,
-		.h = rect.h,
-		.color = WZ_BLACK,
-		.z = 10
-	};
-}
-
 void wz_widget_set_max_constraints(WzWidget widget, unsigned int w, unsigned int h)
 {
 	WzWidgetData* d = wz_widget_get(widget);
@@ -1839,11 +1917,12 @@ void wz_draw(WzWidget* boxes_indices)
 				item_dest_rect.y = widget->actual_y + (widget->actual_h - item.h - widget->pad_bottom - widget->pad_top) / 2;
 			}
 
-			// String item
+			// String item — emit per-glyph textured quads
 			if (item.type == WZ_WIDGET_ITEM_TYPE_STRING)
 			{
 				float w, h;
-				wz->get_string_size(item.val.str.str, 0, strlen(item.val.str.str), item.font_id, &w, &h);
+				unsigned str_len = (unsigned)strlen(item.val.str.str);
+				wz_get_text_size(item.val.str.str, 0, str_len, item.font_id, &w, &h);
 
 				item_dest_rect.w = w;
 				item_dest_rect.h = h;
@@ -1859,17 +1938,40 @@ void wz_draw(WzWidget* boxes_indices)
 					item_dest_rect.y = widget->actual_y + widget->actual_h / 2 - h / 2;
 				}
 
-				buffer->commands[buffer->count++] = (WzDrawCommand){
-					.type = WZ_DRAW_COMMAND_TYPE_TEXT,
-					.str = item.val.str,
-					.x = item_dest_rect.x,
-					.y = item_dest_rect.y,
-					.w = item_dest_rect.w,
-					.h = item_dest_rect.h,
-					.color = widget->font_color,
-					.font_id = item.font_id,
-					.z = widget->z
-				};
+				// Emit one textured quad per glyph
+				if (item.font_id < wz->fonts_count) {
+					WzFont* font = &wz->fonts[item.font_id];
+					float cursor_x = item_dest_rect.x;
+					float baseline_y = item_dest_rect.y + font->ascent;
+
+					for (unsigned ci = 0; ci < str_len; ci++) {
+						unsigned char c = (unsigned char)item.val.str.str[ci];
+						if (c < (unsigned)font->first_char || c >= (unsigned)(font->first_char + font->num_chars)) {
+							continue;
+						}
+
+						WzGlyph* g = &font->glyphs[c];
+						float glyph_w = g->x1 - g->x0;
+						float glyph_h = g->y1 - g->y0;
+
+						if (glyph_w > 0 && glyph_h > 0) {
+							wz_assert(buffer->count < MAX_NUM_DRAW_COMMANDS - 1);
+							buffer->commands[buffer->count++] = (WzDrawCommand){
+								.type = DrawCommandType_Texture,
+								.x = cursor_x + g->xoff,
+								.y = baseline_y + g->yoff,
+								.w = glyph_w,
+								.h = glyph_h,
+								.src_rect = (WzRect){ g->x0, g->y0, glyph_w, glyph_h },
+								.texture = font->atlas_texture,
+								.color = widget->font_color,
+								.z = widget->z
+							};
+						}
+
+						cursor_x += g->xadvance;
+					}
+				}
 			}
 
 			// Texture item
@@ -2543,7 +2645,7 @@ static void wz_update_scroll_window(WzWidget widget, WzInputState* input_state)
 	float pad_x = (float)wz->widgets[widget.handle].pad_left;
 	float box_w = wz->widgets[widget.handle].actual_w - pad_x * 2.0f;
 	float text_up_to_cursor_w, text_h;
-	wz->get_string_size(input_state->buffer, 0,
+	wz_get_text_size(input_state->buffer, 0,
 		input_state->textedit_state.cursor, wz->widgets[widget.handle].font_id, &text_up_to_cursor_w, &text_h);
 	float window_start = (float)input_state->offset_x;
 	float window_end = window_start + box_w;
@@ -2981,9 +3083,9 @@ void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 			if (selection_end > selection_start)
 			{
 				float selection_w, h, up_to_sel_w;
-				wz->get_string_size((char*)disp, selection_start,
+				wz_get_text_size((char*)disp, selection_start,
 					selection_end, wz->widgets[widget.handle].font_id, &selection_w, &h);
-				wz->get_string_size((char*)disp, 0,
+				wz_get_text_size((char*)disp, 0,
 					selection_start, wz->widgets[widget.handle].font_id, &up_to_sel_w, &h);
 				wz_widget_add_rect_new(widget, pad_x + up_to_sel_w - (float)input_state->offset_x,
 					pad_y, selection_w, h, 0x6699FFAA);
@@ -2993,7 +3095,7 @@ void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 			{
 				// Draw cursor
 				float w, h;
-				wz->get_string_size((char*)disp, 0,
+				wz_get_text_size((char*)disp, 0,
 					input_state->textedit_state.cursor, wz->widgets[widget.handle].font_id, &w, &h);
 				float x = pad_x + w - (float)input_state->offset_x;
 				float y = pad_y + 2;
@@ -3798,9 +3900,9 @@ void wz_end()
 		sprintf(line_str, "%s %u (x:%d y:%d w:%u h:%u)", widget->source, widget->handle.handle,
 			widget->actual_x, widget->actual_y, widget->actual_w, widget->actual_h);
 		int w = 0, h = 0;
-		if (wz->get_string_size)
+		if (wz->fonts_count > 0)
 		{
-			wz->get_string_size(line_str, 0, strlen(line_str), 0, (float*)&w, (float*)&h);
+			wz_get_text_size(line_str, 0, (unsigned)strlen(line_str), 0, (float*)&w, (float*)&h);
 		}
 
 		WzRect rect = {
@@ -4003,7 +4105,7 @@ void wz_widget_add_item(WzWidget widget, WzWidgetItem item)
 WzWidget wz_label_raw(WzWidget handle, WzStr str, const char* file, unsigned int line)
 {
 	float w = 0, h = 0;
-	wz->get_string_size(str.str, 0, strlen(str.str), 0, &w, &h);
+	wz_get_text_size(str.str, 0, strlen(str.str), 0, &w, &h);
 
 	WzWidget parent = wz_widget_raw(handle, file, line);
 	wz_widget_set_size(parent, (int)w, (int)h);
@@ -4029,17 +4131,18 @@ float wz_get_font_width(WzInputState* state, int line_start, int char_index)
 	c[0] = state->buffer[char_index];
 
 	float w, h;
-	wz->get_string_size(c, 0, 1, state->font_id, &w, &h);
+	wz_get_text_size(c, 0, 1, state->font_id, &w, &h);
 
 	return w;
 }
 
 static int wz_input_char_at_x(WzGui* wz_, const char* buf, int len, float x, unsigned font_id)
 {
+	(void)wz_;
 	float w, h;
 	for (int i = 0; i < len; i++)
 	{
-		wz_->get_string_size((char*)buf, 0, i + 1, font_id, &w, &h);
+		wz_get_text_size(buf, 0, i + 1, font_id, &w, &h);
 		if (w > x) return i;
 	}
 	return len;
@@ -4090,7 +4193,7 @@ WzWidget wz_text_box_raw(
 WzWidget wzrd_label_button_raw(WzStr str, bool* result, WzWidget handle,
 	const char* file, unsigned  int line) {
 	float w = 0, h = 0;
-	wz->get_string_size(str.str, 0, strlen(str.str), 0, &w, &h);
+	wz_get_text_size(str.str, 0, strlen(str.str), 0, &w, &h);
 
 	WzWidget parent = wz_label_raw(handle, str, file, line);
 
@@ -4604,7 +4707,7 @@ WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* released,
 	const char* file_name, unsigned int line)
 {
 	float w = 0, h = 0;
-	wz->get_string_size(str.str, 0, strlen(str.str), 0, &w, &h);
+	wz_get_text_size(str.str, 0, strlen(str.str), 0, &w, &h);
 
 	WzWidget widget = wz_widget_raw(parent, file_name, line);
 	wz_widget_set_size(widget, (int)w + DEFAULT_PADDING, (int)h + DEFAULT_PADDING);
@@ -5707,7 +5810,7 @@ void wz_widget_set_size(WzWidget c, unsigned int w, unsigned int h)
 void layout_func(StbTexteditRow* row, STB_TEXTEDIT_STRING* str, int start_i)
 {
 	float w, h;
-	wz->get_string_size(str->buffer, 0, str->length, str->font_id, &w, &h);
+	wz_get_text_size(str->buffer, 0, str->length, str->font_id, &w, &h);
 	int remaining_chars = str->length - start_i;
 	row->num_chars = remaining_chars; // should do real word wrap here
 	row->x0 = 0;

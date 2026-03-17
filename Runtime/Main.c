@@ -33,11 +33,7 @@ enum
 	GEN_512_SAFE(WIDGET_LABEL_LIST)
 };
 
-#define STB_TEXTEDIT_IMPLEMENTATION
-#include "stb_textedit.h"
 
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "stb_truetype.h"
 
 static void wz_layout_ispc_test(void);
 static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out);
@@ -227,59 +223,23 @@ bool wz_keycode_is_extended(WZ_Keycode keycode)
 	return keycode >= 128 && keycode < WZ_KEY_COUNT;
 }
 
-void render_text(SDL_Renderer* renderer, stbtt_fontinfo* font,
-	const char* text, float x, float y, float font_size, unsigned len)
+// Upload a single-channel alpha bitmap to an RGBA SDL_Texture for font atlas rendering
+static SDL_Texture* wz_upload_font_atlas_rt(SDL_Renderer* renderer, const unsigned char* bitmap, int w, int h)
 {
-	float scale = stbtt_ScaleForPixelHeight(font, font_size);
-	int ascent, descent, lineGap;
-	stbtt_GetFontVMetrics(font, &ascent, &descent, &lineGap);
-	int baseline = (int)(ascent * scale);
-	float current_x = x;  // Changed to float
-	int current_y = y;
-
-	for (int i = 0; i < len; i++)
-	{
-		// Handle newlines
-		if (text[i] == '\n') {
-			current_x = x;
-			current_y += (int)((ascent - descent + lineGap) * scale);
-			continue;
-		}
-
-		// Get glyph bitmap
-		int width, height, xoff, yoff;
-		unsigned char* bitmap = stbtt_GetCodepointBitmap(font, 0, scale,
-			text[i], &width, &height,
-			&xoff, &yoff);
-		// Get horizontal advance for this character
-		int advance, lsb;
-		stbtt_GetCodepointHMetrics(font, text[i], &advance, &lsb);
-		if (bitmap)
-		{
-			// Render the bitmap pixel by pixel
-			for (int row = 0; row < height; row++) {
-				for (int col = 0; col < width; col++) {
-					unsigned char pixel = bitmap[row * width + col];
-					if (pixel > 0) {
-						// Set color based on alpha value
-						SDL_SetRenderDrawColor(renderer, 0, 0, 0, pixel);
-						SDL_RenderPoint(renderer,
-							(int)current_x + xoff + col,  // Cast to int only when rendering
-							current_y + baseline + yoff + row);
-					}
-				}
-			}
-			stbtt_FreeBitmap(bitmap, NULL);
-		}
-		// Move to next character position - keep as float!
-		current_x += advance * scale;  // Removed (int) cast
-		// Apply kerning if there's a next character
-		if (i + 1 < len)  // Also fixed this from text[i+1]
-		{
-			int kern = stbtt_GetCodepointKernAdvance(font, text[i], text[i + 1]);
-			current_x += kern * scale;  // Removed (int) cast
-		}
+	SDL_Texture* tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, w, h);
+	assert(tex);
+	unsigned char* rgba = (unsigned char*)malloc(w * h * 4);
+	for (int i = 0; i < w * h; i++) {
+		rgba[i * 4 + 0] = 255;
+		rgba[i * 4 + 1] = 255;
+		rgba[i * 4 + 2] = 255;
+		rgba[i * 4 + 3] = bitmap[i];
 	}
+	SDL_UpdateTexture(tex, NULL, rgba, w * 4);
+	free(rgba);
+	SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+	return tex;
 }
 
 typedef struct Wsdl
@@ -300,32 +260,6 @@ typedef struct
 WSDL_Context main_window;
 WSDL_Context gui_window;
 
-#define WZ_MAX_FONTS 16
-stbtt_fontinfo fonts[WZ_MAX_FONTS];
-float font_heights[WZ_MAX_FONTS];
-static int fonts_count = 0;
-
-#define WZ_ATLAS_FIRST 32
-#define WZ_ATLAS_LAST  126
-#define WZ_ATLAS_COUNT (WZ_ATLAS_LAST - WZ_ATLAS_FIRST + 1)
-
-typedef struct {
-    int   atlas_x;
-    int   w, h;
-    int   xoff, yoff;
-    float advance;
-} WzGlyphInfo;
-
-typedef struct {
-    SDL_Texture* texture;
-    int          atlas_w, atlas_h;
-    int          baseline;
-    float        scale;
-    int          ascent, descent, lineGap;
-    WzGlyphInfo  glyphs[WZ_ATLAS_COUNT];
-} WzFontAtlas;
-
-static WzFontAtlas font_atlases[WZ_MAX_FONTS];
 SDL_Texture* x_icon_texture;
 
 
@@ -509,17 +443,22 @@ void WSDL_WzEnd(WSDL_Context* context)
 		}
 		else if (command.type == DrawCommandType_Texture)
 		{
-			SDL_SetTextureBlendMode(command.texture.data, SDL_BLENDMODE_BLEND);
-
-			SDL_FRect src = { (float)command.src_rect.x, (float)command.src_rect.y, (float)command.src_rect.w, (float)command.src_rect.h };
-			SDL_FRect dest = { command.x, command.y, command.w, command.h };
-			SDL_RenderTextureRotated(renderer, command.texture.data,
-				&src, &dest, command.rotation_angle, 0, 0);
-		}
-		else if (command.type == WZ_DRAW_COMMAND_TYPE_TEXT)
-		{
-			render_text(renderer, &fonts[command.font_id],
-				command.str.str, command.x, command.y, font_heights[command.font_id], command.str.len);
+			SDL_Texture* tex = (SDL_Texture*)command.texture.data;
+			if (tex) {
+				SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+				if (command.color) {
+					SDL_SetTextureColorMod(tex, WZ_COLOR_R(command.color), WZ_COLOR_G(command.color), WZ_COLOR_B(command.color));
+					SDL_SetTextureAlphaMod(tex, WZ_COLOR_A(command.color));
+				}
+				SDL_FRect src = { command.src_rect.x, command.src_rect.y, command.src_rect.w, command.src_rect.h };
+				SDL_FRect dest = { command.x, command.y, command.w, command.h };
+				SDL_RenderTextureRotated(renderer, tex,
+					&src, &dest, command.rotation_angle, 0, 0);
+				if (command.color) {
+					SDL_SetTextureColorMod(tex, 255, 255, 255);
+					SDL_SetTextureAlphaMod(tex, 255);
+				}
+			}
 		}
 		else if (command.type == DrawCommandType_Line)
 		{
@@ -948,27 +887,32 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 
 	WSDL_ContextCreate(&gui_window, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-	// stb fonts
+	// Load fonts via wzgui atlas
+	wz_set_gui(&gui_window.gui);
 	{
 		// Font 0: Arial 18px (default)
 		size_t file_size;
-		char* data = SDL_LoadFile("C:\\Windows\\Fonts\\Arial.ttf", &file_size);
+		unsigned char* data = (unsigned char*)SDL_LoadFile("C:\\Windows\\Fonts\\Arial.ttf", &file_size);
 		if (!data) {
 			SDL_Log("Failed to load font: %s", SDL_GetError());
 			SDL_Quit();
 			return 1;
 		}
-		stbtt_InitFont(&fonts[0], data, 0);
-		font_heights[0] = 18;
-		fonts_count = 1;
+		wz_font_load(0, data, (unsigned)file_size, 18.0f);
 
-		// Font 1: Arial 28px
-		char* data2 = SDL_LoadFile("C:\\Windows\\Fonts\\Arial.ttf", &file_size);
-		if (data2) {
-			stbtt_InitFont(&fonts[1], data2, 0);
-			font_heights[1] = 28;
-			fonts_count = 2;
+		// Font 1: Arial 28px (reuse same ttf data)
+		wz_font_load(1, data, (unsigned)file_size, 28.0f);
+		SDL_free(data);
+
+		// Upload atlas textures
+		for (unsigned fi = 0; fi < gui_window.gui.fonts_count; fi++) {
+			WzFont* font = &gui_window.gui.fonts[fi];
+			SDL_Texture* atlas_tex = wz_upload_font_atlas_rt(gui_window.renderer, font->atlas_bitmap, font->atlas_w, font->atlas_h);
+			free(font->atlas_bitmap);
+			font->atlas_bitmap = NULL;
+			wz_font_set_atlas_texture(fi, (WzTexture){ .data = atlas_tex, .w = (float)font->atlas_w, .h = (float)font->atlas_h });
 		}
+
 	}
 
 	// X icon
@@ -998,27 +942,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 
 	return SDL_APP_CONTINUE;
 }
-
-void get_string_size(char* str, unsigned start, unsigned end, unsigned font_id, float* w, float* h)
-{
-	stbtt_fontinfo* f = &fonts[font_id];
-	float fh = font_heights[font_id];
-	float scale = stbtt_ScaleForPixelHeight(f, fh);
-	float width = 0;
-	for (int i = start; i < end; i++)
-	{
-		int advance, lsb;
-		stbtt_GetCodepointHMetrics(f, str[i], &advance, &lsb);
-		width += advance * scale;
-		if (i + 1 < end) {
-			int kern = stbtt_GetCodepointKernAdvance(f, str[i], str[i + 1]);
-			width += kern * scale;
-		}
-	}
-	*w = width;
-	*h = fh;
-}
-
 
 void WSDL_WindowContextBegin(WSDL_Context* context)
 {
@@ -1052,7 +975,6 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
 	WSDL_WzBegin(&gui_window);
 	wz_set_gui(&gui_window.gui);
-	wz_set_string_size_callback(get_string_size);
 
 	gui_window.gui.ticks_in_ns = SDL_GetTicksNS;
 	gui_window.gui.ticks_in_ms = SDL_GetTicks;
@@ -1436,10 +1358,28 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	for (int j = 0; j < 4; ++j)
 	{
 		int llen = (int)SDL_strlen(labels[j]);
-		render_text(renderer, &fonts[0], labels[j],
-			(int)slots[0].abs_x[j] + 4,
-			(int)slots[0].abs_y[j] + 2,
-			font_heights[0], llen);
+		// Render debug label using atlas glyph quads
+		{
+			WzFont* font = &gui_window.gui.fonts[0];
+			SDL_Texture* atlas = (SDL_Texture*)font->atlas_texture.data;
+			float cx = (float)((int)slots[0].abs_x[j] + 4);
+			float by = (float)((int)slots[0].abs_y[j] + 2) + font->ascent;
+			SDL_SetTextureColorMod(atlas, 0, 0, 0);
+			SDL_SetTextureAlphaMod(atlas, 255);
+			for (int ci = 0; ci < llen; ci++) {
+				unsigned char c = (unsigned char)labels[j][ci];
+				if (c < (unsigned)font->first_char || c >= (unsigned)(font->first_char + font->num_chars)) continue;
+				WzGlyph* g = &font->glyphs[c];
+				float gw = g->x1 - g->x0, gh = g->y1 - g->y0;
+				if (gw > 0 && gh > 0) {
+					SDL_FRect src = { g->x0, g->y0, gw, gh };
+					SDL_FRect dst = { cx + g->xoff, by + g->yoff, gw, gh };
+					SDL_RenderTexture(renderer, atlas, &src, &dst);
+				}
+				cx += g->xadvance;
+			}
+			SDL_SetTextureColorMod(atlas, 255, 255, 255);
+		}
 	}
 
 	// -----------------------------------------------------------------
@@ -1448,9 +1388,29 @@ static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out
 	char buf[40];
 	int len = SDL_snprintf(buf, sizeof(buf), "ISPC: %.4f ms", ms);
 	float tw = 0, th = 0;
-	get_string_size(buf, 0, len, 0, &tw, &th);
+	wz_get_text_size(buf, 0, len, 0, &tw, &th);
 	wz_push_filled_rect(out, WINDOW_WIDTH - tw - 14, 6, tw + 10, th + 4, WZ_RGBA(0, 0, 0, 160));
-	render_text(renderer, &fonts[0], buf, (int)(WINDOW_WIDTH - tw - 9), 8, th, len);
+	{
+		WzFont* font = &gui_window.gui.fonts[0];
+		SDL_Texture* atlas = (SDL_Texture*)font->atlas_texture.data;
+		float cx = (float)(WINDOW_WIDTH - tw - 9);
+		float by = 8.0f + font->ascent;
+		SDL_SetTextureColorMod(atlas, 0, 0, 0);
+		SDL_SetTextureAlphaMod(atlas, 255);
+		for (int ci = 0; ci < len; ci++) {
+			unsigned char c = (unsigned char)buf[ci];
+			if (c < (unsigned)font->first_char || c >= (unsigned)(font->first_char + font->num_chars)) continue;
+			WzGlyph* g = &font->glyphs[c];
+			float gw = g->x1 - g->x0, gh = g->y1 - g->y0;
+			if (gw > 0 && gh > 0) {
+				SDL_FRect src = { g->x0, g->y0, gw, gh };
+				SDL_FRect dst = { cx + g->xoff, by + g->yoff, gw, gh };
+				SDL_RenderTexture(renderer, atlas, &src, &dst);
+			}
+			cx += g->xadvance;
+		}
+		SDL_SetTextureColorMod(atlas, 255, 255, 255);
+	}
 }
 
 void wz_layout_new()

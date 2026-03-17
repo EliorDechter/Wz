@@ -261,6 +261,23 @@ typedef struct wzrd_texture {
 	float w, h;
 } WzTexture;
 
+typedef struct WzGlyph {
+	float x0, y0, x1, y1;   // atlas pixel coords (top-left, bottom-right)
+	float xoff, yoff;        // offset from cursor when rendering
+	float xadvance;          // horizontal advance to next glyph
+} WzGlyph;
+
+typedef struct WzFont {
+	WzGlyph glyphs[128];     // ASCII range
+	WzTexture atlas_texture;  // platform-created texture from baked atlas
+	unsigned char* atlas_bitmap; // raw 8-bit alpha bitmap (freed after GPU upload)
+	int atlas_w, atlas_h;
+	float pixel_height;
+	float ascent, descent, line_gap; // scaled font metrics
+	int first_char;           // first baked codepoint (typically 32)
+	int num_chars;            // number of baked codepoints (typically 96)
+} WzFont;
+
 typedef enum ItemType {
 	ItemType_None,
 	WZ_WIDGET_ITEM_TYPE_STRING,
@@ -773,6 +790,9 @@ typedef struct WzGui
 	unsigned focused_widget_unique_id;
 	unsigned focused_widget_index;
 
+	// Font atlas
+	WzFont fonts[4];
+	unsigned fonts_count;
 
 	// New 3.15 for layouting
 	WzChunk chunks[MAX_NUM_WIDGETS];
@@ -902,6 +922,11 @@ typedef struct WzLogMessage
 // FUNCTION DECLARATIONS
 //==============================================================================
 
+
+// Font atlas API
+void wz_font_load(unsigned font_id, const unsigned char* ttf_data, unsigned ttf_size, float pixel_height);
+void wz_font_set_atlas_texture(unsigned font_id, WzTexture texture);
+void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h);
 
 // Core API
 void wz_set_string_size_callback(void (*get_string_size)(char*, unsigned, unsigned, unsigned, float*, float*));
