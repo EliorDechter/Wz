@@ -331,6 +331,22 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 		wz_font_set_atlas_texture(0, wz_atlas);
 	}
 
+	// Dropdown icon (oversampled triangle)
+	{
+		wz_create_dropdown_icon();
+		SDL_Texture* tex = wz_upload_font_atlas(g_sdl.renderer,
+			editor_gui.dropdown_icon_bitmap,
+			editor_gui.dropdown_icon_w,
+			editor_gui.dropdown_icon_h);
+		free(editor_gui.dropdown_icon_bitmap);
+		editor_gui.dropdown_icon_bitmap = NULL;
+		SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+		wz_set_dropdown_icon_texture((WzTexture){
+			.data = tex,
+			.w = (float)editor_gui.dropdown_icon_w,
+			.h = (float)editor_gui.dropdown_icon_h });
+	}
+
 	game_init();
 
 	g_sdl.mutex = SDL_CreateMutex();

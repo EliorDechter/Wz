@@ -34,7 +34,6 @@ enum
 };
 
 
-
 static void wz_layout_ispc_test(void);
 static void wz_layout_draw_test(SDL_Renderer* renderer, WzDrawCommandBuffer* out);
 static void WSDL_RenderCommandBuffer(SDL_Renderer* renderer, WzDrawCommandBuffer* buf);
@@ -804,6 +803,22 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 
 	}
 
+	// Dropdown icon (oversampled triangle)
+	{
+		wz_create_dropdown_icon();
+		SDL_Texture* tex = wz_upload_font_atlas_rt(gui_window.renderer,
+			gui_window.gui.dropdown_icon_bitmap,
+			gui_window.gui.dropdown_icon_w,
+			gui_window.gui.dropdown_icon_h);
+		free(gui_window.gui.dropdown_icon_bitmap);
+		gui_window.gui.dropdown_icon_bitmap = NULL;
+		SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+		wz_set_dropdown_icon_texture((WzTexture){
+			.data = tex,
+			.w = (float)gui_window.gui.dropdown_icon_w,
+			.h = (float)gui_window.gui.dropdown_icon_h });
+	}
+
 	// X icon
 	{
 		// TODO: Remove width and height fields of wz texture
@@ -877,7 +892,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	static int selected_text = -1;
 	static bool active;
 	wz_dropdown(ib_window, strs, 3, &selected_text, &active);
-	wz_label(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+	WzWidget w = wz_label(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
 	WSDL_WzEnd(&gui_window);
 

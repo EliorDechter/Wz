@@ -316,7 +316,6 @@ typedef struct Item {
 	ItemType type;
 	wzrd_v2 size;
 	unsigned int color;
-	int margin_left, margin_right, margin_top, margin_bottom;
 	union {
 		WzStr str;
 		WzTexture texture;
@@ -834,6 +833,11 @@ typedef struct WzGui
 	WzFont fonts[4];
 	unsigned fonts_count;
 
+	// Icons (pre-rendered oversampled bitmaps)
+	unsigned char* dropdown_icon_bitmap;  // white+alpha, to be uploaded by platform
+	int dropdown_icon_w, dropdown_icon_h;
+	WzTexture dropdown_icon_texture;
+
 	// New 3.15 for layouting
 	WzChunk chunks[MAX_NUM_WIDGETS];
 	unsigned chunks_count;
@@ -980,6 +984,8 @@ void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 void wz_font_load(unsigned font_id, const unsigned char* ttf_data, unsigned ttf_size, float pixel_height);
 void wz_font_set_atlas_texture(unsigned font_id, WzTexture texture);
 void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h);
+void wz_create_dropdown_icon(void);
+void wz_set_dropdown_icon_texture(WzTexture texture);
 
 // Core API
 void wz_set_string_size_callback(void (*get_string_size)(char*, unsigned, unsigned, unsigned, float*, float*));

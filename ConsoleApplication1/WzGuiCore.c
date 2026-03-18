@@ -1,4 +1,7 @@
-﻿#define wz_assert(x) assert(x)
+﻿// Wormby
+// Amit
+
+#define wz_assert(x) assert(x)
 //#define wz_assert(x) (void)(x)
 #define WZRD_UNUSED(x) (void)x
 
@@ -92,6 +95,60 @@ void wz_font_set_atlas_texture(unsigned font_id, WzTexture texture)
 {
 	assert(font_id < 4);
 	wz->fonts[font_id].atlas_texture = texture;
+}
+
+void wz_create_dropdown_icon(void)
+{
+	// Render a downward triangle at 4x resolution, then downsample.
+	// Final icon is 10x7. Oversample at 40x28.
+	int final_w = 10, final_h = 7;
+	int scale = 4;
+	int big_w = final_w * scale;  // 64
+	int big_h = final_h * scale;  // 48
+
+	// Rasterize triangle into oversampled buffer (alpha only)
+	unsigned char* big = (unsigned char*)calloc(big_w * big_h, 1);
+
+	// Triangle points: top-left (0,0), top-right (big_w, 0), bottom-center (big_w/2, big_h)
+	for (int y = 0; y < big_h; y++) {
+		// Left edge: (0,0) to (big_w/2, big_h)
+		float x_left = (float)(big_w / 2) * y / big_h;
+		// Right edge: (big_w,0) to (big_w/2, big_h)
+		float x_right = (float)big_w - (float)(big_w / 2) * y / big_h;
+		int xl = (int)(x_left + 0.5f);
+		int xr = (int)(x_right + 0.5f);
+		if (xl < 0) xl = 0;
+		if (xr > big_w) xr = big_w;
+		for (int x = xl; x < xr; x++) {
+			big[y * big_w + x] = 255;
+		}
+	}
+
+	// Downsample: average each scale x scale block into one pixel
+	unsigned char* final_bmp = (unsigned char*)calloc(final_w * final_h, 1);
+	int block = scale * scale;
+	for (int fy = 0; fy < final_h; fy++) {
+		for (int fx = 0; fx < final_w; fx++) {
+			int sum = 0;
+			for (int sy = 0; sy < scale; sy++) {
+				for (int sx = 0; sx < scale; sx++) {
+					sum += big[(fy * scale + sy) * big_w + (fx * scale + sx)];
+				}
+			}
+			final_bmp[fy * final_w + fx] = (unsigned char)(sum / block);
+		}
+	}
+
+	free(big);
+
+	wz->dropdown_icon_bitmap = final_bmp;
+	wz->dropdown_icon_w = final_w;
+	wz->dropdown_icon_h = final_h;
+}
+
+void wz_set_dropdown_icon_texture(WzTexture texture)
+{
+	wz->dropdown_icon_texture = texture;
 }
 
 void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h)
@@ -279,94 +336,6 @@ void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 	dl->indices[dl->idx_count++] = base + 0;
 
 	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
-}
-
-static void wz_dl_add_triangle(WzDrawList* dl,
-	float x0, float y0, float x1, float y1, float x2, float y2,
-	float cr, float cg, float cb, float ca)
-{
-	// Antialiased triangle: solid inner triangle + 3 fringe quads along edges.
-	// Each fringe quad has the inner edge at full alpha and the outer edge at 0 alpha.
-	// 3 inner verts + 3 outer verts = 6 verts total
-	// 1 inner triangle + 3 fringe quads (2 tris each) = 1 + 6 = 7 triangles = 21 indices
-	assert(dl->vtx_count + 6 <= WZ_MAX_VERTICES);
-	assert(dl->idx_count + 21 <= WZ_MAX_INDICES);
-
-	void* tex = NULL;
-	float wu = 0, wv = 0;
-	if (wz->fonts_count > 0) {
-		WzFont* font = &wz->fonts[0];
-		tex = font->atlas_texture.data;
-		wu = font->white_uv_u;
-		wv = font->white_uv_v;
-	}
-	wz_dl_set_texture(dl, tex);
-	wz_dl_ensure_draw_call(dl, tex);
-
-	// Compute triangle centroid to determine outward direction for each vertex
-	float cx = (x0 + x1 + x2) / 3.0f;
-	float cy = (y0 + y1 + y2) / 3.0f;
-
-	// For each vertex, compute an outward offset (away from centroid) of ~1px
-	float fringe = 1.0f;
-
-	float pts[3][2] = { {x0,y0}, {x1,y1}, {x2,y2} };
-	float outer[3][2];
-	for (int i = 0; i < 3; i++) {
-		float dx = pts[i][0] - cx;
-		float dy = pts[i][1] - cy;
-		float len = sqrtf(dx * dx + dy * dy);
-		if (len > 0.001f) {
-			outer[i][0] = pts[i][0] + (dx / len) * fringe;
-			outer[i][1] = pts[i][1] + (dy / len) * fringe;
-		} else {
-			outer[i][0] = pts[i][0];
-			outer[i][1] = pts[i][1];
-		}
-	}
-
-	int base = (int)dl->vtx_count;
-
-	// Inner vertices (full alpha) — indices 0,1,2
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x0, y0, cr, cg, cb, ca, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x1, y1, cr, cg, cb, ca, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x2, y2, cr, cg, cb, ca, wu, wv };
-
-	// Outer vertices (zero alpha) — indices 3,4,5
-	dl->vertices[dl->vtx_count++] = (WzVertex){ outer[0][0], outer[0][1], cr, cg, cb, 0, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ outer[1][0], outer[1][1], cr, cg, cb, 0, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ outer[2][0], outer[2][1], cr, cg, cb, 0, wu, wv };
-
-	// Solid inner triangle
-	dl->indices[dl->idx_count++] = base + 0;
-	dl->indices[dl->idx_count++] = base + 1;
-	dl->indices[dl->idx_count++] = base + 2;
-
-	// Fringe quad for edge 0-1: inner0, inner1, outer1, outer0
-	dl->indices[dl->idx_count++] = base + 0;
-	dl->indices[dl->idx_count++] = base + 1;
-	dl->indices[dl->idx_count++] = base + 4;
-	dl->indices[dl->idx_count++] = base + 4;
-	dl->indices[dl->idx_count++] = base + 3;
-	dl->indices[dl->idx_count++] = base + 0;
-
-	// Fringe quad for edge 1-2: inner1, inner2, outer2, outer1
-	dl->indices[dl->idx_count++] = base + 1;
-	dl->indices[dl->idx_count++] = base + 2;
-	dl->indices[dl->idx_count++] = base + 5;
-	dl->indices[dl->idx_count++] = base + 5;
-	dl->indices[dl->idx_count++] = base + 4;
-	dl->indices[dl->idx_count++] = base + 1;
-
-	// Fringe quad for edge 2-0: inner2, inner0, outer0, outer2
-	dl->indices[dl->idx_count++] = base + 2;
-	dl->indices[dl->idx_count++] = base + 0;
-	dl->indices[dl->idx_count++] = base + 3;
-	dl->indices[dl->idx_count++] = base + 3;
-	dl->indices[dl->idx_count++] = base + 5;
-	dl->indices[dl->idx_count++] = base + 2;
-
-	dl->draw_calls[dl->draw_call_count - 1].idx_count += 21;
 }
 
 bool wz_widget_is_equal(WzWidget a, WzWidget b)
@@ -736,12 +705,11 @@ int wzrd_box_get_current_index() {
 
 void wz_widget_add_text_new(WzWidget parent, WzStr str, float x, float y)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 
 	item.type = WZ_WIDGET_ITEM_TYPE_STRING;
 	item.val.str = str;
 	//item.color = wz_widget_get(parent)->font_color;
-	item.margin_bottom = item.margin_top = item.margin_right = item.margin_left = 0;
 	item.x = x;
 	item.y = y;
 	item.font_id = wz_widget_get(parent)->font_id;
@@ -756,7 +724,6 @@ void wz_widget_add_text(WzWidget parent, WzStr str)
 	item.type = WZ_WIDGET_ITEM_TYPE_STRING;
 	item.val.str = str;
 	//item.color = wz_widget_get(parent)->font_color;
-	item.margin_bottom = item.margin_top = item.margin_right = item.margin_left = 0;
 	item.font_id = wz_widget_get(parent)->font_id;
 	wz_widget_add_item(parent, item);
 }
@@ -1173,7 +1140,6 @@ void wz_widget_add_rect(WzWidget widget, unsigned int w, unsigned int h, unsigne
 	item.h = h;
 	item.type = WZ_ITEM_TYPE_RECT;
 	item.color = color;
-	item.margin_left = item.margin_right = item.margin_bottom = item.margin_top = 0;
 	item.center_h = item.center_w = true;
 
 	wz_widget_add_item(widget, item);
@@ -1195,21 +1161,19 @@ void wz_widget_add_rect_new(WzWidget widget, float x, float y, float w, float h,
 	item.h = h;
 	item.type = WZ_ITEM_TYPE_RECT;
 	item.color = wz_convert_color(color);
-	item.margin_left = item.margin_right = item.margin_bottom = item.margin_top = 0;
 
 	wz_widget_add_item(widget, item);
 }
 
 void wz_widget_add_rect_absolute(WzWidget widget, int x, int y, unsigned w, unsigned h, unsigned int color)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.w = w;
 	item.h = h;
 	item.x = x;
 	item.y = y;
 	item.type = ItemType_RectAbsolute;
 	item.color = color;
-	item.margin_left = item.margin_right = item.margin_bottom = item.margin_top = 0;
 	item.center_h = item.center_w = true;
 
 	wz_widget_add_item(widget, item);
@@ -1217,11 +1181,10 @@ void wz_widget_add_rect_absolute(WzWidget widget, int x, int y, unsigned w, unsi
 
 void wz_widget_add_texture(WzWidget parent, WzTexture texture, unsigned w, unsigned h) {
 
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_Texture;
 	item.size = (wzrd_v2){ w, h };
 	item.val.texture = texture;
-	item.margin_left = item.margin_right = item.margin_bottom = item.margin_top = 0;
 	item.center_h = item.center_w = true;
 	item.w = w;
 	item.h = h;
@@ -2076,8 +2039,8 @@ void wz_draw(WzWidget* boxes_indices)
 			}
 
 			// Apply item margins
-			item_dest_rect.x += item.margin_left;
-			item_dest_rect.y += item.margin_top;
+			//item_dest_rect.x += item.margin_left;
+			//item_dest_rect.y += item.margin_top;
 
 			// String item — emit per-glyph textured quads
 			if (item.type == WZ_WIDGET_ITEM_TYPE_STRING)
@@ -2144,19 +2107,18 @@ void wz_draw(WzWidget* boxes_indices)
 			}
 
 			// Dropdown arrow — downward filled triangle, sized to fit parent
-			if (item.type == ItemType_DropdownIcon)
+			if (item.type == ItemType_DropdownIcon && wz->dropdown_icon_texture.data)
 			{
-				float pad = 4;
-				float arrow_w = widget->actual_w - pad * 2;
-				float arrow_h = widget->actual_h - pad * 2;
-				float cx = widget->actual_x + widget->actual_w / 2;
-				float cy = widget->actual_y + widget->actual_h / 2;
-				WZ_COLOR_UNPACK(widget->font_color, cr, cg, cb, ca);
-				wz_dl_add_triangle(dl,
-					cx - arrow_w / 2, cy - arrow_h / 2,
-					cx + arrow_w / 2, cy - arrow_h / 2,
-					cx, cy + arrow_h / 2,
-					cr, cg, cb, ca);
+				float icon_w = (float)wz->dropdown_icon_w;
+				float icon_h = (float)wz->dropdown_icon_h;
+				float dx = widget->actual_x + (widget->actual_w - icon_w) / 2;
+				float dy = widget->actual_y + (widget->actual_h - icon_h) / 2;
+				wz_dl_add_textured_quad(dl,
+					wz->dropdown_icon_texture.data,
+					dx, dy, icon_w, icon_h,
+					0, 0, icon_w, icon_h,
+					icon_w, icon_h,
+					widget->font_color);
 			}
 
 			// Rect item
@@ -2509,10 +2471,9 @@ void wz_widget_ignore_unique_id(WzWidget widget)
 
 void wz_widget_add_horizontal_dotted_line(WzWidget widget, unsigned w)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_HorizontalDottedLine;
 	item.size.x = 20;
-	item.margin_bottom = item.margin_top = item.margin_left = item.margin_right = 0;
 	item.center_h = item.center_w = true;
 	item.w = w;
 	item.h = 1;
@@ -2521,9 +2482,8 @@ void wz_widget_add_horizontal_dotted_line(WzWidget widget, unsigned w)
 
 void wz_widget_add_vertical_dotted_line(WzWidget widget, unsigned h)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_VerticalDottedLine;
-	item.margin_bottom = item.margin_top = item.margin_left = item.margin_right = 0;
 	item.center_h = item.center_w = true;
 	item.w = 1;
 	item.h = h;
@@ -2532,10 +2492,9 @@ void wz_widget_add_vertical_dotted_line(WzWidget widget, unsigned h)
 
 void wz_widget_add_horizontal_line(WzWidget widget, unsigned w)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_HorizontalLine;
 	item.size.x = 20;
-	item.margin_bottom = item.margin_top = item.margin_left = item.margin_right = 0;
 	item.center_h = item.center_w = true;
 	item.w = w;
 	item.h = 1;
@@ -2544,9 +2503,8 @@ void wz_widget_add_horizontal_line(WzWidget widget, unsigned w)
 
 void wz_widget_add_vertical_line(WzWidget widget, unsigned h)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_VerticalLine;
-	item.margin_bottom = item.margin_top = item.margin_left = item.margin_right = 0;
 	item.center_h = item.center_w = true;
 	item.w = 1;
 	item.h = h;
@@ -2555,9 +2513,8 @@ void wz_widget_add_vertical_line(WzWidget widget, unsigned h)
 
 void wz_widget_add_line_absolute(WzWidget widget, int x0, int y0, int x1, int y1)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_LineAbsolute;
-	item.margin_bottom = item.margin_top = item.margin_left = item.margin_right = 0;
 	item.center_h = item.center_w = true;
 	item.val.line.x0 = x0;
 	item.val.line.y0 = y0;
@@ -2568,9 +2525,8 @@ void wz_widget_add_line_absolute(WzWidget widget, int x0, int y0, int x1, int y1
 
 void wz_widget_add_dotted_line_absolute(WzWidget widget, int x0, int y0, int x1, int y1)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_DottedLineAbsolute;
-	item.margin_bottom = item.margin_top = item.margin_left = item.margin_right = 0;
 	item.center_h = item.center_w = true;
 	item.val.line.x0 = x0;
 	item.val.line.y0 = y0;
@@ -2581,9 +2537,8 @@ void wz_widget_add_dotted_line_absolute(WzWidget widget, int x0, int y0, int x1,
 
 void wz_widget_add_horizontal_line_absolute(WzWidget widget, unsigned h)
 {
-	WzWidgetItem item;
+	WzWidgetItem item = { 0 };
 	item.type = ItemType_HorizontalLineAbsolute;
-	item.margin_bottom = item.margin_top = item.margin_left = item.margin_right = 0;
 	item.center_h = item.center_w = true;
 	item.w = 1;
 	item.h = h;
@@ -3683,22 +3638,26 @@ void wz_toggle_run(WzWidget button, bool* released)
 {
 	// Active
 	if (wz_widget_is_activating(button) ||
-		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) &&
+			wz_widget_is_focused(button)))
 	{
 		*released = !(*released);
 	}
 
 	// Border
 	if (wz_widget_is_interacting(button) ||
-		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
+		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) &&
+			wz_widget_is_focused(button)))
 	{
+		printf("wowoww\n");
 		if (!wz_widget_get(button)->dont_show_special_border_on_click)
 		{
 			wz_widget_set_border(button, WZ_BORDER_SUNKEN);
 		}
 	}
-}
 
+	printf(" %u %u\n", button.handle, wz->active_item.handle);
+}
 
 void wz_end()
 {
@@ -3772,7 +3731,8 @@ void wz_end()
 	}
 
 	// Run widgets
-	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
+	// NOTE: Breaks when using max num widgets
+	for (unsigned i = 0; i < wz->widgets_count; ++i)
 	{
 		WzWidgetData* widget = &wz->widgets[i];
 		switch (widget->type)
@@ -4405,13 +4365,26 @@ void wzrd_label_list_raw(WzWidget parent, WzStr* item_names,
 	}
 }
 
+
+void wz_widget_set_w(WzWidget c, unsigned int w)
+{
+	WzWidgetData* data = wz_widget_get(c);
+	data->min_w = data->constraint_max_w = w;
+
+	// TODO: Handle max size too
+	WzChunk* chunk = &wz->chunks[data->chunk];
+	chunk->min_width[data->slot] = w;
+}
+
 WzWidget wz_dropdown(WzWidget parent, 
 	const WzStr* texts, int texts_count, int* selected_text, bool* active)
 {
 	WzWidget widget = wz_widget(parent);
 	wz_widget_set_layout(widget, WZ_LAYOUT_NONE);
+	wz_widget_set_pad(widget, 0);
 
 	const int h = 20;
+	const int w = 200;
 
 	if (*active)
 	{
@@ -4426,6 +4399,7 @@ WzWidget wz_dropdown(WzWidget parent,
 		for (unsigned i = 0; i < texts_count; ++i)
 		{
 			WzWidget label = wz_label(list, texts[i]);
+			wz_widget_set_w(label, w - 2);
 			wz_widget_set_color(label, WZ_WHITE);
 
 			if (wz_widget_is_hovered(label))
@@ -4441,23 +4415,22 @@ WzWidget wz_dropdown(WzWidget parent,
 		}
 	}
 
-	const int w = 200;
 	wz_widget_set_size(widget, w, h);
 	wz_widget_set_color(widget, WZ_WHITE);
 	wz_widget_set_border(widget, WZ_BORDER_SUNKEN);
 	wz_widget_add_text(widget, *selected_text >= 0 ? texts[*selected_text]: wz_str_create(""));
 	wz_widget_set_type(widget, WZ_WIDGET_TYPE_DROPDOWN);
 
+	unsigned button_size = h - 2;
 	WzWidget button = wz_command_toggle(widget, wz_str_create(""), active);
-	wz_widget_set_size(button, 20, h);
-	wz_widget_set_x(button, w - 20);
+	wz_widget_set_size(button, button_size, button_size);
+	wz_widget_set_x(button, w - button_size - 1);
+	wz_widget_set_y(button, 1);
 	{
 		WzWidgetItem item = { 0 };
 		item.type = ItemType_DropdownIcon;
 		wz_widget_add_item(button, item);
 	}
-
-	
 
 	return widget;
 }
@@ -4757,26 +4730,6 @@ bool wzrd_v2_is_inside_polygon(wzrd_v2 point, wzrd_polygon polygon) {
 	}
 
 	return inside;
-}
-
-void wz_command_toggle_run(WzWidget button, bool* released)
-{
-	if (wz_widget_is_activating(button))
-	{
-		*released = true;
-	}
-
-	if (wz_widget_is_interacting(button) ||
-		((wz->keyboard.keys['\n'] == WZ_ACTIVATING ||
-			wz->keyboard.keys['\n'] == WZ_ACTIVE) && wz_widget_is_focused(button)))
-	{
-		*released = true;
-
-		if (!wz_widget_get(button)->dont_show_special_border_on_click)
-		{
-			wz_widget_set_border(button, WZ_BORDER_SUNKEN);
-		}
-	}
 }
 
 void wz_widget_disable(WzWidget widget, bool disable)
@@ -5888,6 +5841,8 @@ void wz_widget_set_size(WzWidget c, unsigned int w, unsigned int h)
 	chunk->min_width[data->slot] = w;
 	chunk->min_height[data->slot] = h;
 }
+
+
 
 // define the functions we need
 void layout_func(StbTexteditRow* row, STB_TEXTEDIT_STRING* str, int start_i)
