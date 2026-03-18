@@ -172,8 +172,17 @@ void wz_dl_clear_clip(WzDrawList* dl)
 	dl->_current_clip = (WzRect){ 0 };
 }
 
-void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
-	float u0, float v0, float u1, float v1, unsigned color)
+// Unpack 0xRRGGBBAA to floats — used by callers before wz_dl_add_quad
+#define WZ_COLOR_UNPACK(color, cr, cg, cb, ca) \
+	float cr = (float)((color >> 24) & 0xFF) / 255.0f; \
+	float cg = (float)((color >> 16) & 0xFF) / 255.0f; \
+	float cb = (float)((color >> 8) & 0xFF) / 255.0f;  \
+	float ca = (float)(color & 0xFF) / 255.0f;
+
+// Low-level quad emitter — takes pre-converted float colors, no conversion overhead
+static void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
+	float u0, float v0, float u1, float v1,
+	float cr, float cg, float cb, float ca)
 {
 	assert(dl->vtx_count + 4 <= WZ_MAX_VERTICES);
 	assert(dl->idx_count + 6 <= WZ_MAX_INDICES);
@@ -182,18 +191,11 @@ void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
 
 	int base = (int)dl->vtx_count;
 
-	float cr = (float)((color >> 24) & 0xFF) / 255.0f;
-	float cg = (float)((color >> 16) & 0xFF) / 255.0f;
-	float cb = (float)((color >> 8) & 0xFF) / 255.0f;
-	float ca = (float)(color & 0xFF) / 255.0f;
-
-	// 4 vertices: top-left, top-right, bottom-right, bottom-left
 	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y,     cr, cg, cb, ca, u0, v0 };
 	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y,     cr, cg, cb, ca, u1, v0 };
 	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y + h, cr, cg, cb, ca, u1, v1 };
 	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y + h, cr, cg, cb, ca, u0, v1 };
 
-	// 6 indices: two triangles
 	dl->indices[dl->idx_count++] = base + 0;
 	dl->indices[dl->idx_count++] = base + 1;
 	dl->indices[dl->idx_count++] = base + 2;
@@ -201,25 +203,21 @@ void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
 	dl->indices[dl->idx_count++] = base + 3;
 	dl->indices[dl->idx_count++] = base + 0;
 
-	// Update current draw call's index count
 	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
 }
 
 void wz_dl_add_rect(WzDrawList* dl, float x, float y, float w, float h, unsigned color)
 {
-	// Use the font atlas with a white pixel UV so that rects and text
-	// share the same texture and batch into fewer draw calls.
-	// GPU computes: white_texel(1,1,1,1) * vertex_color = vertex_color.
+	WZ_COLOR_UNPACK(color, cr, cg, cb, ca);
 	if (wz->fonts_count > 0) {
 		WzFont* font = &wz->fonts[0];
 		wz_dl_set_texture(dl, font->atlas_texture.data);
 		wz_dl_add_quad(dl, x, y, w, h,
 			font->white_uv_u, font->white_uv_v,
-			font->white_uv_u, font->white_uv_v, color);
+			font->white_uv_u, font->white_uv_v, cr, cg, cb, ca);
 	} else {
-		// Fallback before any font is loaded
 		wz_dl_set_texture(dl, NULL);
-		wz_dl_add_quad(dl, x, y, w, h, 0, 0, 0, 0, color);
+		wz_dl_add_quad(dl, x, y, w, h, 0, 0, 0, 0, cr, cg, cb, ca);
 	}
 }
 
@@ -228,12 +226,13 @@ void wz_dl_add_textured_quad(WzDrawList* dl, void* texture,
 	float sx, float sy, float sw, float sh,
 	float tex_w, float tex_h, unsigned color)
 {
+	WZ_COLOR_UNPACK(color, cr, cg, cb, ca);
 	wz_dl_set_texture(dl, texture);
 	float u0 = sx / tex_w;
 	float v0 = sy / tex_h;
 	float u1 = (sx + sw) / tex_w;
 	float v1 = (sy + sh) / tex_h;
-	wz_dl_add_quad(dl, dx, dy, dw, dh, u0, v0, u1, v1, color);
+	wz_dl_add_quad(dl, dx, dy, dw, dh, u0, v0, u1, v1, cr, cg, cb, ca);
 }
 
 void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
@@ -265,10 +264,7 @@ void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 
 	int base = (int)dl->vtx_count;
 
-	float cr = (float)((color >> 24) & 0xFF) / 255.0f;
-	float cg = (float)((color >> 16) & 0xFF) / 255.0f;
-	float cb = (float)((color >> 8) & 0xFF) / 255.0f;
-	float ca = (float)(color & 0xFF) / 255.0f;
+	WZ_COLOR_UNPACK(color, cr, cg, cb, ca);
 
 	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 + nx, y0 + ny, cr, cg, cb, ca, wu, wv };
 	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 + nx, y1 + ny, cr, cg, cb, ca, wu, wv };
@@ -283,6 +279,94 @@ void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 	dl->indices[dl->idx_count++] = base + 0;
 
 	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
+}
+
+static void wz_dl_add_triangle(WzDrawList* dl,
+	float x0, float y0, float x1, float y1, float x2, float y2,
+	float cr, float cg, float cb, float ca)
+{
+	// Antialiased triangle: solid inner triangle + 3 fringe quads along edges.
+	// Each fringe quad has the inner edge at full alpha and the outer edge at 0 alpha.
+	// 3 inner verts + 3 outer verts = 6 verts total
+	// 1 inner triangle + 3 fringe quads (2 tris each) = 1 + 6 = 7 triangles = 21 indices
+	assert(dl->vtx_count + 6 <= WZ_MAX_VERTICES);
+	assert(dl->idx_count + 21 <= WZ_MAX_INDICES);
+
+	void* tex = NULL;
+	float wu = 0, wv = 0;
+	if (wz->fonts_count > 0) {
+		WzFont* font = &wz->fonts[0];
+		tex = font->atlas_texture.data;
+		wu = font->white_uv_u;
+		wv = font->white_uv_v;
+	}
+	wz_dl_set_texture(dl, tex);
+	wz_dl_ensure_draw_call(dl, tex);
+
+	// Compute triangle centroid to determine outward direction for each vertex
+	float cx = (x0 + x1 + x2) / 3.0f;
+	float cy = (y0 + y1 + y2) / 3.0f;
+
+	// For each vertex, compute an outward offset (away from centroid) of ~1px
+	float fringe = 1.0f;
+
+	float pts[3][2] = { {x0,y0}, {x1,y1}, {x2,y2} };
+	float outer[3][2];
+	for (int i = 0; i < 3; i++) {
+		float dx = pts[i][0] - cx;
+		float dy = pts[i][1] - cy;
+		float len = sqrtf(dx * dx + dy * dy);
+		if (len > 0.001f) {
+			outer[i][0] = pts[i][0] + (dx / len) * fringe;
+			outer[i][1] = pts[i][1] + (dy / len) * fringe;
+		} else {
+			outer[i][0] = pts[i][0];
+			outer[i][1] = pts[i][1];
+		}
+	}
+
+	int base = (int)dl->vtx_count;
+
+	// Inner vertices (full alpha) — indices 0,1,2
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x0, y0, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x1, y1, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x2, y2, cr, cg, cb, ca, wu, wv };
+
+	// Outer vertices (zero alpha) — indices 3,4,5
+	dl->vertices[dl->vtx_count++] = (WzVertex){ outer[0][0], outer[0][1], cr, cg, cb, 0, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ outer[1][0], outer[1][1], cr, cg, cb, 0, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ outer[2][0], outer[2][1], cr, cg, cb, 0, wu, wv };
+
+	// Solid inner triangle
+	dl->indices[dl->idx_count++] = base + 0;
+	dl->indices[dl->idx_count++] = base + 1;
+	dl->indices[dl->idx_count++] = base + 2;
+
+	// Fringe quad for edge 0-1: inner0, inner1, outer1, outer0
+	dl->indices[dl->idx_count++] = base + 0;
+	dl->indices[dl->idx_count++] = base + 1;
+	dl->indices[dl->idx_count++] = base + 4;
+	dl->indices[dl->idx_count++] = base + 4;
+	dl->indices[dl->idx_count++] = base + 3;
+	dl->indices[dl->idx_count++] = base + 0;
+
+	// Fringe quad for edge 1-2: inner1, inner2, outer2, outer1
+	dl->indices[dl->idx_count++] = base + 1;
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 5;
+	dl->indices[dl->idx_count++] = base + 5;
+	dl->indices[dl->idx_count++] = base + 4;
+	dl->indices[dl->idx_count++] = base + 1;
+
+	// Fringe quad for edge 2-0: inner2, inner0, outer0, outer2
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 0;
+	dl->indices[dl->idx_count++] = base + 3;
+	dl->indices[dl->idx_count++] = base + 3;
+	dl->indices[dl->idx_count++] = base + 5;
+	dl->indices[dl->idx_count++] = base + 2;
+
+	dl->draw_calls[dl->draw_call_count - 1].idx_count += 21;
 }
 
 bool wz_widget_is_equal(WzWidget a, WzWidget b)
@@ -2057,6 +2141,22 @@ void wz_draw(WzWidget* boxes_indices)
 					0, 0, item.val.texture.w, item.val.texture.h,
 					item.val.texture.w, item.val.texture.h,
 					0xFFFFFFFF);
+			}
+
+			// Dropdown arrow — downward filled triangle, sized to fit parent
+			if (item.type == ItemType_DropdownIcon)
+			{
+				float pad = 4;
+				float arrow_w = widget->actual_w - pad * 2;
+				float arrow_h = widget->actual_h - pad * 2;
+				float cx = widget->actual_x + widget->actual_w / 2;
+				float cy = widget->actual_y + widget->actual_h / 2;
+				WZ_COLOR_UNPACK(widget->font_color, cr, cg, cb, ca);
+				wz_dl_add_triangle(dl,
+					cx - arrow_w / 2, cy - arrow_h / 2,
+					cx + arrow_w / 2, cy - arrow_h / 2,
+					cx, cy + arrow_h / 2,
+					cr, cg, cb, ca);
 			}
 
 			// Rect item
@@ -4348,8 +4448,14 @@ WzWidget wz_dropdown(WzWidget parent,
 	wz_widget_add_text(widget, *selected_text >= 0 ? texts[*selected_text]: wz_str_create(""));
 	wz_widget_set_type(widget, WZ_WIDGET_TYPE_DROPDOWN);
 
-	WzWidget button = wz_command_toggle(widget, wz_str_create("tog"), active);
-	wz_widget_set_x(button, w - 10);
+	WzWidget button = wz_command_toggle(widget, wz_str_create(""), active);
+	wz_widget_set_size(button, 20, h);
+	wz_widget_set_x(button, w - 20);
+	{
+		WzWidgetItem item = { 0 };
+		item.type = ItemType_DropdownIcon;
+		wz_widget_add_item(button, item);
+	}
 
 	
 

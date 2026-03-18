@@ -444,12 +444,7 @@ void WSDL_WzEnd(WSDL_Context* context)
 			SDL_SetRenderClipRect(renderer, NULL);
 		}
 
-		SDL_Texture* tex = (SDL_Texture*)dc->texture;
-		if (tex) {
-			SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
-		}
-
-		SDL_RenderGeometry(renderer, tex,
+		SDL_RenderGeometry(renderer, (SDL_Texture*)dc->texture,
 			sdl_verts, (int)dl->vtx_count,
 			dl->indices + dc->idx_offset, (int)dc->idx_count);
 	}

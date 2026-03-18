@@ -968,8 +968,6 @@ void wz_dl_clear(WzDrawList* dl);
 void wz_dl_set_texture(WzDrawList* dl, void* texture);
 void wz_dl_set_clip(WzDrawList* dl, WzRect rect);
 void wz_dl_clear_clip(WzDrawList* dl);
-void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
-	float u0, float v0, float u1, float v1, unsigned color);
 void wz_dl_add_rect(WzDrawList* dl, float x, float y, float w, float h, unsigned color);
 void wz_dl_add_textured_quad(WzDrawList* dl, void* texture,
 	float dx, float dy, float dw, float dh,
