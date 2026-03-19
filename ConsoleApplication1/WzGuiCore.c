@@ -851,9 +851,14 @@ void wz_widget_add_offset(WzWidget handle, int x, int y)
 bool wz_widget_is_deactivating(WzWidget handle)
 {
 	if (wz_widget_is_equal(handle, wz->deactivating_item))
-	{
 		return true;
-	}
+
+	WzWidgetData* d = wz_widget_get(handle);
+	if (wz_path_is_valid(&d->widget_path))
+		return wz_path_equal(&d->widget_path, &wz->deactivating_path);
+
+	if (d->unique_id && d->unique_id == wz->deactivating_id)
+		return true;
 
 	return false;
 }
@@ -1133,6 +1138,64 @@ WzWidget wz_hbox_raw(WzWidget parent, const char* file, unsigned int line)
 	return p;
 }
 
+// Sets both unique_id and widget_path on a widget, deriving the path from the parent widget's stored path
+static void wz_widget_set_user_id(WzWidget widget, unsigned user_id)
+{
+	WzWidgetData* data = wz_widget_get(widget);
+	data->unique_id = user_id;
+	if (user_id)
+	{
+		WzWidgetPath path = { 0 };
+		if (wz_handle_is_valid(data->parent))
+		{
+			WzWidgetData* parent_data = wz_widget_get(data->parent);
+			if (parent_data)
+				path = parent_data->widget_path;
+		}
+		for (int i = 0; i < WZ_MAX_PATH_DEPTH; ++i)
+		{
+			if (path.ids[i] == 0) { path.ids[i] = user_id; break; }
+		}
+		data->widget_path = path;
+	}
+}
+
+// _id variants for layout widgets (optional user ID)
+WzWidget wz_widget_id_raw(WzWidget parent, unsigned user_id, const char* file, unsigned int line)
+{
+	WzWidget w = wz_widget_raw(parent, file, line);
+	wz_widget_set_user_id(w, user_id);
+	return w;
+}
+
+WzWidget wz_vbox_id_raw(WzWidget parent, unsigned user_id, const char* file, unsigned int line)
+{
+	WzWidget w = wz_vbox_raw(parent, file, line);
+	wz_widget_set_user_id(w, user_id);
+	return w;
+}
+
+WzWidget wz_hbox_id_raw(WzWidget parent, unsigned user_id, const char* file, unsigned int line)
+{
+	WzWidget w = wz_hbox_raw(parent, file, line);
+	wz_widget_set_user_id(w, user_id);
+	return w;
+}
+
+WzWidget wz_label_id_raw(WzWidget parent, WzStr str, unsigned user_id, const char* file, unsigned int line)
+{
+	WzWidget w = wz_label_raw(parent, str, file, line);
+	wz_widget_set_user_id(w, user_id);
+	return w;
+}
+
+WzWidget wz_panel_id_raw(WzWidget parent, unsigned user_id, const char* file, unsigned int line)
+{
+	WzWidget w = wz_panel_raw(parent, file, line);
+	wz_widget_set_user_id(w, user_id);
+	return w;
+}
+
 void wz_widget_add_rect(WzWidget widget, unsigned int w, unsigned int h, unsigned int color)
 {
 	WzWidgetItem item = { 0 };
@@ -1238,6 +1301,7 @@ WzWidget wz_begin(
 	bool enable_input)
 {
 	memset(wz->occupied, 0, sizeof(*wz->occupied) * MAX_NUM_WIDGETS);
+
 	for (unsigned i = 0; i < wz->persistent_widgets_count; ++i)
 	{
 		//wz->occupied[wz->persistent_widgets[i].handle.handle] = false;
@@ -1484,9 +1548,15 @@ bool wzrd_handle_is_released(WzWidget handle) {
 }
 
 bool wz_widget_is_hovered(WzWidget handle) {
-	if (wz_widget_is_equal(handle, wz->hovered_item)) {
+	if (wz_widget_is_equal(handle, wz->hovered_item))
 		return true;
-	}
+
+	WzWidgetData* d = wz_widget_get(handle);
+	if (wz_path_is_valid(&d->widget_path))
+		return wz_path_equal(&d->widget_path, &wz->hovered_path);
+
+	if (d->unique_id && d->unique_id == wz->hovered_id)
+		return true;
 
 	return false;
 }
@@ -1628,6 +1698,8 @@ void wz_input(int* indices, int count)
 	if (half_clicked_box && (wz->mouse_left == WZ_ACTIVE || wz->mouse_left == WZ_DEACTIVATING))
 	{
 		wz->activating_item = (WzWidget){ 0 };
+		wz->activating_id = 0;
+		wz->activating_path = (WzWidgetPath){ 0 };
 	}
 
 	if (wz->mouse_left == WZ_DEACTIVATING)
@@ -1641,14 +1713,20 @@ void wz_input(int* indices, int count)
 	if (wz->mouse_left == WZ_INACTIVE)
 	{
 		wz->deactivating_item = (WzWidget){ 0 };
+		wz->deactivating_id = 0;
+		wz->deactivating_path = (WzWidgetPath){ 0 };
 	}
 
 	if (wz_handle_is_valid(hovered_box->handle))
 	{
 		wz->hovered_item = hovered_box->handle;
+		wz->hovered_id = hovered_box->unique_id;
+		wz->hovered_path = hovered_box->widget_path;
 	}
 	else {
 		wz->hovered_item = (WzWidget){ 0 };
+		wz->hovered_id = 0;
+		wz->hovered_path = (WzWidgetPath){ 0 };
 	}
 
 	WzWidgetData* hot_box = wz_widget_get(wz->hovered_item);
@@ -1663,11 +1741,17 @@ void wz_input(int* indices, int count)
 				if (hot_box == active_box)
 				{
 					wz->clicked_item = active_box->handle;
+					wz->clicked_id = active_box->unique_id;
+					wz->clicked_path = active_box->widget_path;
 					//canvas->selected_item = hot_box->handle;
 				}
 
 				wz->deactivating_item = wz->active_item;
+				wz->deactivating_id = wz->active_id;
+				wz->deactivating_path = wz->active_path;
 				wz->active_item = (WzWidget){ 0 };
+				wz->active_id = 0;
+				wz->active_path = (WzWidgetPath){ 0 };
 			}
 		}
 	}
@@ -1680,8 +1764,12 @@ void wz_input(int* indices, int count)
 			}*/
 		if (wz->mouse_left == WZ_ACTIVATING) {
 			wz->active_item = hot_box->handle;
+			wz->active_id = hot_box->unique_id;
+			wz->active_path = hot_box->widget_path;
 
 			wz->activating_item = hot_box->handle;
+			wz->activating_id = hot_box->unique_id;
+			wz->activating_path = hot_box->widget_path;
 
 			// Dragging
 			wz_assert(half_clicked_box);
@@ -1703,6 +1791,8 @@ void wz_input(int* indices, int count)
 	// Clicked item
 	if (wz_handle_is_valid(wz->clicked_item) && wz->mouse_left == WZ_INACTIVE) {
 		wz->clicked_item = (WzWidget){ 0 };
+		wz->clicked_id = 0;
+		wz->clicked_path = (WzWidgetPath){ 0 };
 
 		wz->clean = false;
 	}
@@ -1721,9 +1811,15 @@ void wz_input(int* indices, int count)
 }
 
 bool wz_widget_is_activating(WzWidget handle) {
-	if (wz_widget_is_equal(handle, wz->activating_item)) {
+	if (wz_widget_is_equal(handle, wz->activating_item))
 		return true;
-	}
+
+	WzWidgetData* d = wz_widget_get(handle);
+	if (wz_path_is_valid(&d->widget_path))
+		return wz_path_equal(&d->widget_path, &wz->activating_path);
+
+	if (d->unique_id && d->unique_id == wz->activating_id)
+		return true;
 
 	return false;
 }
@@ -1739,11 +1835,51 @@ bool wz_is_any_widget_activating()
 }
 
 bool wz_widget_is_active(WzWidget handle) {
-	if (wz_widget_is_equal(handle, wz->active_item)) {
+	if (wz_widget_is_equal(handle, wz->active_item))
 		return true;
-	}
+
+	WzWidgetData* d = wz_widget_get(handle);
+	if (wz_path_is_valid(&d->widget_path))
+		return wz_path_equal(&d->widget_path, &wz->active_path);
+
+	if (d->unique_id && d->unique_id == wz->active_id)
+		return true;
 
 	return false;
+}
+
+// State query by user-defined ID (flat)
+bool wz_id_is_hovered(unsigned user_id)      { return user_id && wz->hovered_id == user_id; }
+bool wz_id_is_active(unsigned user_id)       { return user_id && wz->active_id == user_id; }
+bool wz_id_is_clicked(unsigned user_id)      { return user_id && wz->clicked_id == user_id; }
+bool wz_id_is_activating(unsigned user_id)   { return user_id && wz->activating_id == user_id; }
+bool wz_id_is_deactivating(unsigned user_id) { return user_id && wz->deactivating_id == user_id; }
+
+WzWidgetData* wz_widget_get_by_id(unsigned user_id)
+{
+	for (int i = 0; i < MAX_NUM_WIDGETS; ++i)
+	{
+		if (wz->occupied[i] && wz->widgets[i].unique_id == user_id)
+			return &wz->widgets[i];
+	}
+	return NULL;
+}
+
+// State query by path (full tree identity)
+bool wz_path_is_hovered(WzWidgetPath path)      { return wz_path_is_valid(&path) && wz_path_equal(&wz->hovered_path, &path); }
+bool wz_path_is_active(WzWidgetPath path)       { return wz_path_is_valid(&path) && wz_path_equal(&wz->active_path, &path); }
+bool wz_path_is_clicked(WzWidgetPath path)      { return wz_path_is_valid(&path) && wz_path_equal(&wz->clicked_path, &path); }
+bool wz_path_is_activating(WzWidgetPath path)   { return wz_path_is_valid(&path) && wz_path_equal(&wz->activating_path, &path); }
+bool wz_path_is_deactivating(WzWidgetPath path) { return wz_path_is_valid(&path) && wz_path_equal(&wz->deactivating_path, &path); }
+
+WzWidgetData* wz_widget_get_by_path(WzWidgetPath path)
+{
+	for (int i = 0; i < MAX_NUM_WIDGETS; ++i)
+	{
+		if (wz->occupied[i] && wz_path_equal(&wz->widgets[i].widget_path, &path))
+			return &wz->widgets[i];
+	}
+	return NULL;
 }
 
 double clamp(double d, double min, double max) {
@@ -2419,6 +2555,8 @@ void wz_handle_input()
 			wz->dragged_box = (WzWidgetData){ 0 };
 			wz->dragged_item = (WzWidget){ 0 };
 			wz->active_item = (WzWidget){ 0 };
+			wz->active_id = 0;
+			wz->active_path = (WzWidgetPath){ 0 };
 		}
 	}
 
@@ -2601,6 +2739,7 @@ WzWidget wz_tree_add_row_raw(WzTree* tree, WzStr str, WzTexture texture, unsigne
 	const icon_size = 20;
 
 	WzWidget row = wz_hbox(tree->menu);
+	wz_widget_set_user_id(row, (unsigned)(uintptr_t)node);
 	wz_widget_add_source(row, file, line);
 	wz_widget_set_cross_axis_alignment(row, WZ_CROSS_AXIS_ALIGNMENT_CENTER);
 	wz_widget_set_margins(row, 5);
@@ -2612,7 +2751,7 @@ WzWidget wz_tree_add_row_raw(WzTree* tree, WzStr str, WzTexture texture, unsigne
 	WzWidget toggle;
 	if (node->children_count)
 	{
-		toggle = wz_toggle(row, toggle_size, toggle_size, 0x00000000, expand);
+		toggle = wz_toggle(row, toggle_size, toggle_size, 0x00000000, expand, 1);
 		wz_widget_add_source(toggle, file, line);
 		wz_widget_add_rect(toggle, toggle_size - 2, toggle_size - 2, WZ_WHITE);
 		wz_widget_set_border_flat(toggle, WZ_BLACK);
@@ -2631,7 +2770,7 @@ WzWidget wz_tree_add_row_raw(WzTree* tree, WzStr str, WzTexture texture, unsigne
 	WzWidget icon = wz_texture(row, texture, icon_size, icon_size);
 	wz_widget_add_source(icon, file, line);
 
-	WzWidget label = wz_label(row, str);
+	WzWidget label = wz_label_id_raw(row, str, 2, file, line);
 	wz_widget_add_source(label, file, line);
 	wz_widget_add_content_margin_left(label, 5);
 	wz_widget_add_content_margin_right(label, 5);
@@ -3400,17 +3539,20 @@ WzStr wz_str_create(const char* str)
 }
 
 void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
-	WzWidget* panels, unsigned* current_tab)
+	WzWidget* panels, unsigned* current_tab, unsigned user_id)
 {
 	WzWidget big_panel = wz_vbox(parent);
+	wz_widget_set_user_id(big_panel, user_id);
 	wz_widget_set_border(big_panel, WZ_BORDER_RAISED);
 	wz_widget_set_main_axis_size_min(big_panel);
 
 	WzWidget tabs_panel = wz_hbox(big_panel);
+	wz_widget_set_user_id(tabs_panel, 1);
 	wz_widget_set_cross_axis_alignment(tabs_panel, WZ_CROSS_AXIS_ALIGNMENT_END);
 	wz_widget_set_main_axis_size_min(tabs_panel);
 
 	WzWidget panel = wz_vbox(big_panel);
+	wz_widget_set_user_id(panel, 2);
 	wz_widget_set_size(panel, 100, 100);
 	wz_widget_set_border(panel, WZ_BORDER_RAISED);
 	wz_widget_set_margins(panel, 10);
@@ -3421,7 +3563,7 @@ void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
 	for (unsigned i = 0; i < tabs_count; ++i)
 	{
 		bool b = false;
-		WzWidget tab = wz_command_button(tabs_panel, tab_names[i], &b);
+		WzWidget tab = wz_command_button(tabs_panel, tab_names[i], &b, i + 1);
 		wz_widget_set_width(tab, 30);
 		wz_widget_set_border(tab, WZ_BORDER_TAB);
 		tabs[i] = tab;
@@ -3649,14 +3791,12 @@ void wz_toggle_run(WzWidget button, bool* released)
 		((wz->keyboard.keys['\n'] == WZ_ACTIVATING || wz->keyboard.keys['\n'] == WZ_ACTIVE) &&
 			wz_widget_is_focused(button)))
 	{
-		printf("wowoww\n");
 		if (!wz_widget_get(button)->dont_show_special_border_on_click)
 		{
 			wz_widget_set_border(button, WZ_BORDER_SUNKEN);
 		}
 	}
 
-	printf(" %u %u\n", button.handle, wz->active_item.handle);
 }
 
 void wz_end()
@@ -3966,10 +4106,11 @@ WzGui* wzrd_canvas_get()
 }
 
 WzWidget wz_toggle_raw(WzWidget parent, unsigned w, unsigned h, unsigned int color,
-	bool* active, const char* file_name, unsigned int line)
+	bool* active, unsigned user_id, const char* file_name, unsigned int line)
 {
 	bool b = false;
 	WzWidget handle = wz_widget_raw(parent, file_name, line);
+	wz_widget_set_user_id(handle, user_id);
 
 	wz_widget_add_source(handle, file_name, line);
 	wz_widget_set_max_constraints(handle, w, h);
@@ -3980,8 +4121,9 @@ WzWidget wz_toggle_raw(WzWidget parent, unsigned w, unsigned h, unsigned int col
 }
 
 WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, bool* active,
-	const char* file_name, unsigned int line) {
+	unsigned user_id, const char* file_name, unsigned int line) {
 	WzWidget handle = wz_widget(parent, file_name, line);
+	wz_widget_set_user_id(handle, user_id);
 	wz_widget_add_source(handle, file_name, line);
 	wz_widget_set_max_constraints(handle, w, h);
 	wz_widget_add_texture(handle, texture, w, h);
@@ -4053,9 +4195,10 @@ WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture,
 
 
 WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active,
-	const char* file_name, unsigned int line)
+	unsigned user_id, const char* file_name, unsigned int line)
 {
 	WzWidget widget = wz_label_raw(parent, str, file_name, line);
+	wz_widget_set_user_id(widget, user_id);
 	wz_widget_set_border(widget, WZ_BORDER_RAISED);
 	wz_widget_set_text_alignment(widget, WZ_TEXT_ALIGNMENT_CENTER);
 	wz_widget_set_type(widget, WZ_WIDGET_TYPE_TOGGLE);
@@ -4209,11 +4352,12 @@ WzWidget wz_text_box_raw(
 	WzWidget parent, WzInputState* state,
 	unsigned flags, WzInputFilter filter,
 	bool* committed, const char* placeholder,
-	const char* file, unsigned int line)
+	unsigned user_id, const char* file, unsigned int line)
 {
 	// TODO: Double click to allow entering text
 
 	WzWidget widget = wz_widget_raw(parent, file, line);
+	wz_widget_set_user_id(widget, user_id);
 	wz_widget_set_size(widget, 101, 18 + 4 * 2);
 	wz_widget_set_pad(widget, 4);
 	wz_widget_set_border(widget, WZ_BORDER_SUNKEN);
@@ -4337,9 +4481,8 @@ void wzrd_label_list_raw(WzWidget parent, WzStr* item_names,
 		WzWidget wdg;
 
 		unsigned idx = items[i];
-		wdg = wz_command_button(panel, item_names[idx], &is_label_clicked);
+		wdg = wz_command_button(panel, item_names[idx], &is_label_clicked, unique_ids[idx]);
 		wz_widget_set_color(wdg, color);
-		wz_widget_get(wdg)->unique_id = unique_ids[idx];
 		wz_widget_set_border(wdg, WZ_BORDER_NONE);
 		wz_widget_set_size(wdg, width, height);
 		wz_widget_set_margins(wdg, 0);
@@ -4376,19 +4519,27 @@ void wz_widget_set_w(WzWidget c, unsigned int w)
 	chunk->min_width[data->slot] = w;
 }
 
-WzWidget wz_dropdown(WzWidget parent, 
-	const WzStr* texts, int texts_count, int* selected_text, bool* active)
+WzWidget wz_dropdown(WzWidget parent,
+	const WzStr* texts, int texts_count, int* selected_text, bool* active,
+	unsigned user_id)
 {
-	WzWidget widget = wz_widget(parent);
-	wz_widget_set_layout(widget, WZ_LAYOUT_NONE);
-	wz_widget_set_pad(widget, 0);
-
-	const int h = 20;
+	const int h = 25;
 	const int w = 200;
+
+	WzWidget widget = wz_widget(parent);
+	wz_widget_set_user_id(widget, user_id);
+	wz_widget_set_layout(widget, WZ_LAYOUT_NONE);
+	wz_widget_set_pad(widget, 4);
+	wz_widget_set_size(widget, w, h);
+	wz_widget_set_color(widget, WZ_WHITE);
+	wz_widget_set_border(widget, WZ_BORDER_SUNKEN);
+	wz_widget_add_text(widget, *selected_text >= 0 ? texts[*selected_text] : wz_str_create(""));
+	wz_widget_set_type(widget, WZ_WIDGET_TYPE_DROPDOWN);
 
 	if (*active)
 	{
 		WzWidget list = wz_widget(widget);
+		wz_widget_set_user_id(list, 2);
 		wz_widget_set_layout(list, WZ_LAYOUT_VERTICAL);
 		wz_widget_set_y(list, h);
 		wz_widget_set_z(list, 1);
@@ -4398,10 +4549,11 @@ WzWidget wz_dropdown(WzWidget parent,
 
 		for (unsigned i = 0; i < texts_count; ++i)
 		{
-			WzWidget label = wz_label(list, texts[i]);
+			WzWidget label = wz_label_id_raw(list, texts[i], i + 1, __FILE__, __LINE__);
 			wz_widget_set_w(label, w - 2);
 			wz_widget_set_color(label, WZ_WHITE);
-
+			wz_widget_set_pad(label, 2);
+			
 			if (wz_widget_is_hovered(label))
 			{
 				wz_widget_set_color(label, WZ_BLUE);
@@ -4415,14 +4567,9 @@ WzWidget wz_dropdown(WzWidget parent,
 		}
 	}
 
-	wz_widget_set_size(widget, w, h);
-	wz_widget_set_color(widget, WZ_WHITE);
-	wz_widget_set_border(widget, WZ_BORDER_SUNKEN);
-	wz_widget_add_text(widget, *selected_text >= 0 ? texts[*selected_text]: wz_str_create(""));
-	wz_widget_set_type(widget, WZ_WIDGET_TYPE_DROPDOWN);
-
 	unsigned button_size = h - 2;
-	WzWidget button = wz_command_toggle(widget, wz_str_create(""), active);
+	// Sub-ID 1 for the internal toggle button — path becomes [.., user_id, 1] via parent derivation
+	WzWidget button = wz_command_toggle_raw(widget, wz_str_create(""), active, 1, __FILE__, __LINE__);
 	wz_widget_set_size(button, button_size, button_size);
 	wz_widget_set_x(button, w - button_size - 1);
 	wz_widget_set_y(button, 1);
@@ -4659,9 +4806,11 @@ void wzrd_drag(bool* drag) {
 }
 
 bool wzrd_box_is_active(WzWidgetData* box) {
-	if (wz_widget_is_equal(box->handle, wz->active_item)) {
+	if (wz_widget_is_equal(box->handle, wz->active_item))
 		return true;
-	}
+
+	if (box->unique_id && box->unique_id == wz->active_id)
+		return true;
 
 	return false;
 }
@@ -4675,17 +4824,21 @@ bool wzrd_box_is_dragged(WzWidgetData* box) {
 }
 
 bool wzrd_box_is_hot_using_canvas(WzGui* c, WzWidgetData* box) {
-	if (wz_widget_is_equal(box->handle, c->hovered_item)) {
+	if (wz_widget_is_equal(box->handle, c->hovered_item))
 		return true;
-	}
+
+	if (box->unique_id && box->unique_id == c->hovered_id)
+		return true;
 
 	return false;
 }
 
 bool wzrd_box_is_hot(WzWidgetData* box) {
-	if (wz_widget_is_equal(box->handle, wz->hovered_item)) {
+	if (wz_widget_is_equal(box->handle, wz->hovered_item))
 		return true;
-	}
+
+	if (box->unique_id && box->unique_id == wz->hovered_id)
+		return true;
 
 	return false;
 }
@@ -4740,12 +4893,13 @@ void wz_widget_disable(WzWidget widget, bool disable)
 #define DEFAULT_PADDING 11
 
 WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* released,
-	const char* file_name, unsigned int line)
+	unsigned user_id, const char* file_name, unsigned int line)
 {
 	float w = 0, h = 0;
 	wz_get_text_size(str.str, 0, strlen(str.str), 0, &w, &h);
 
 	WzWidget widget = wz_widget_raw(parent, file_name, line);
+	wz_widget_set_user_id(widget, user_id);
 	wz_widget_set_size(widget, (int)w + DEFAULT_PADDING, (int)h + DEFAULT_PADDING);
 	wz_widget_add_text(widget, str);
 	wz_widget_set_border(widget, WZ_BORDER_RAISED);
@@ -5744,9 +5898,10 @@ void wz_zoom(float zoom_factor)
 	wz->zoom_factor += zoom_factor;
 }
 
-void wz_frame(WzWidget parent, unsigned w, unsigned h, WzStr str)
+void wz_frame(WzWidget parent, unsigned w, unsigned h, WzStr str, unsigned user_id)
 {
 	WzWidget widget = wz_widget(parent);
+	wz_widget_set_user_id(widget, user_id);
 	const int offset = 12;
 	wz_widget_set_size(widget, w, h);
 	wz_widget_add_rect_new(widget, offset, offset, w - 2 * offset, 1, 0xa0a0a0ff);
@@ -5754,7 +5909,7 @@ void wz_frame(WzWidget parent, unsigned w, unsigned h, WzStr str)
 	wz_widget_add_rect_new(widget, offset, h - offset, w - 2 * offset, 1, 0xa0a0a0ff);
 	wz_widget_add_rect_new(widget, offset, offset, 1, h - 2 * offset, 0xa0a0a0ff);
 	wz_widget_set_border(widget, WZ_BORDER_NONE);
-	WzWidget label = wz_label(widget, str);
+	WzWidget label = wz_label_id_raw(widget, str, 1, __FILE__, __LINE__);
 	wz_widget_set_x(label, 20);
 	wz_widget_set_y(label, 2);
 }

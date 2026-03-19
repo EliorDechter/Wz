@@ -27,9 +27,12 @@
 
 enum
 {
-	WIDGET_INPUT_BOX1,
+	WIDGET_INPUT_BOX1 = 1,
 	WIDGET_INPUT_BOX2,
 	WIDGET_INPUT_BOX3,
+	WIDGET_DROPDOWN1,
+	WIDGET_VBOX1,
+	WIDGET_LABEL1,
 	GEN_512_SAFE(WIDGET_LABEL_LIST)
 };
 
@@ -886,13 +889,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	WSDL_WzBeginWidgets(&gui_window);
 
 	WzWidget window = (WzWidget){ 0 };
-	WzWidget ib_window = wz_vbox(window);
+	WzWidget ib_window = wz_vbox_id(window, WIDGET_VBOX1);
 
 	WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
 	static int selected_text = -1;
 	static bool active;
-	wz_dropdown(ib_window, strs, 3, &selected_text, &active);
-	WzWidget w = wz_label(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+	wz_dropdown(ib_window, strs, 3, &selected_text, &active, WIDGET_DROPDOWN1);
+	WzWidget w = wz_label_id(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), WIDGET_LABEL1);
 
 	WSDL_WzEnd(&gui_window);
 

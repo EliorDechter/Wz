@@ -3,6 +3,11 @@
 #include "Textures.h"
 #include "Game.h"
 
+enum
+{
+	EDITOR_WIDGET_DRAW_FRAME = 1,
+};
+
 WzStr wzrd_str_from_str128(str128* str)
 {
 	WzStr result = { .str = str->val, .len = str->len };
@@ -191,7 +196,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 		wz_widget_set_cross_axis_alignment(draw_panel, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
 		wz_widget_clip(draw_panel);
 
-		wz_frame(draw_panel, 100, 100, wz_str_create("wow"));
+		wz_frame(draw_panel, 100, 100, wz_str_create("wow"), EDITOR_WIDGET_DRAW_FRAME);
 
 #if 0
 		// Game panel
