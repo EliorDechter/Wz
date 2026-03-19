@@ -151,6 +151,41 @@ void wz_set_dropdown_icon_texture(WzTexture texture)
 	wz->dropdown_icon_texture = texture;
 }
 
+// Pack dropdown icon and X icon into font 0's atlas bitmap.
+// Must be called after wz_font_load(0, ...) and wz_create_dropdown_icon().
+void wz_pack_icons_into_atlas(void)
+{
+	WzFont* font = &wz->fonts[0];
+	unsigned char* atlas = font->atlas_bitmap;
+	int aw = font->atlas_w;
+	int ah = font->atlas_h;
+
+	// Place dropdown icon at bottom-left of atlas: (0, ah - dropdown_h - x_icon_h - 2)
+	int dd_w = wz->dropdown_icon_w;  // 10
+	int dd_h = wz->dropdown_icon_h;  // 7
+	int dd_x = 0;
+	int dd_y = ah - dd_h - 16 - 2;  // leave room for x_icon (16) + 2px gap
+	for (int y = 0; y < dd_h; y++)
+		for (int x = 0; x < dd_w; x++)
+			atlas[(dd_y + y) * aw + (dd_x + x)] = wz->dropdown_icon_bitmap[y * dd_w + x];
+
+	wz->dropdown_atlas_x = (float)dd_x;
+	wz->dropdown_atlas_y = (float)dd_y;
+
+	// Place X icon below dropdown: (0, ah - 16)
+	int xi_x = 0;
+	int xi_y = ah - 16;
+	for (int y = 0; y < 16; y++)
+		for (int x = 0; x < 16; x++) {
+			// wz_x_icon stores 0x00 or 0xFF as unsigned (RGBA packed).
+			// We just need alpha: nonzero = 255, zero = 0
+			atlas[(xi_y + y) * aw + (xi_x + x)] = wz_x_icon[y * 16 + x] ? 255 : 0;
+		}
+
+	wz->x_icon_atlas_x = (float)xi_x;
+	wz->x_icon_atlas_y = (float)xi_y;
+}
+
 void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h)
 {
 	if (!str || end <= start) {
@@ -208,6 +243,8 @@ static void wz_dl_ensure_draw_call(WzDrawList* dl, void* texture)
 	dc->texture = texture;
 	dc->idx_offset = dl->idx_count;
 	dc->idx_count = 0;
+	dc->vtx_offset = dl->vtx_count;
+	dc->vtx_count = 0;
 	dc->clip_rect = dl->_current_clip;
 	dc->has_clip = dl->_has_clip;
 }
@@ -229,17 +266,9 @@ void wz_dl_clear_clip(WzDrawList* dl)
 	dl->_current_clip = (WzRect){ 0 };
 }
 
-// Unpack 0xRRGGBBAA to floats — used by callers before wz_dl_add_quad
-#define WZ_COLOR_UNPACK(color, cr, cg, cb, ca) \
-	float cr = (float)((color >> 24) & 0xFF) / 255.0f; \
-	float cg = (float)((color >> 16) & 0xFF) / 255.0f; \
-	float cb = (float)((color >> 8) & 0xFF) / 255.0f;  \
-	float ca = (float)(color & 0xFF) / 255.0f;
-
-// Low-level quad emitter — takes pre-converted float colors, no conversion overhead
+// Low-level quad emitter
 static void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
-	float u0, float v0, float u1, float v1,
-	float cr, float cg, float cb, float ca)
+	float u0, float v0, float u1, float v1, unsigned color)
 {
 	assert(dl->vtx_count + 4 <= WZ_MAX_VERTICES);
 	assert(dl->idx_count + 6 <= WZ_MAX_INDICES);
@@ -248,10 +277,10 @@ static void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
 
 	int base = (int)dl->vtx_count;
 
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y,     cr, cg, cb, ca, u0, v0 };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y,     cr, cg, cb, ca, u1, v0 };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y + h, cr, cg, cb, ca, u1, v1 };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y + h, cr, cg, cb, ca, u0, v1 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y,     color, u0, v0 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y,     color, u1, v0 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y + h, color, u1, v1 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y + h, color, u0, v1 };
 
 	dl->indices[dl->idx_count++] = base + 0;
 	dl->indices[dl->idx_count++] = base + 1;
@@ -261,20 +290,20 @@ static void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
 	dl->indices[dl->idx_count++] = base + 0;
 
 	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
+	dl->draw_calls[dl->draw_call_count - 1].vtx_count += 4;
 }
 
 void wz_dl_add_rect(WzDrawList* dl, float x, float y, float w, float h, unsigned color)
 {
-	WZ_COLOR_UNPACK(color, cr, cg, cb, ca);
 	if (wz->fonts_count > 0) {
 		WzFont* font = &wz->fonts[0];
 		wz_dl_set_texture(dl, font->atlas_texture.data);
 		wz_dl_add_quad(dl, x, y, w, h,
 			font->white_uv_u, font->white_uv_v,
-			font->white_uv_u, font->white_uv_v, cr, cg, cb, ca);
+			font->white_uv_u, font->white_uv_v, color);
 	} else {
 		wz_dl_set_texture(dl, NULL);
-		wz_dl_add_quad(dl, x, y, w, h, 0, 0, 0, 0, cr, cg, cb, ca);
+		wz_dl_add_quad(dl, x, y, w, h, 0, 0, 0, 0, color);
 	}
 }
 
@@ -283,13 +312,12 @@ void wz_dl_add_textured_quad(WzDrawList* dl, void* texture,
 	float sx, float sy, float sw, float sh,
 	float tex_w, float tex_h, unsigned color)
 {
-	WZ_COLOR_UNPACK(color, cr, cg, cb, ca);
 	wz_dl_set_texture(dl, texture);
 	float u0 = sx / tex_w;
 	float v0 = sy / tex_h;
 	float u1 = (sx + sw) / tex_w;
 	float v1 = (sy + sh) / tex_h;
-	wz_dl_add_quad(dl, dx, dy, dw, dh, u0, v0, u1, v1, cr, cg, cb, ca);
+	wz_dl_add_quad(dl, dx, dy, dw, dh, u0, v0, u1, v1, color);
 }
 
 void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
@@ -321,12 +349,10 @@ void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 
 	int base = (int)dl->vtx_count;
 
-	WZ_COLOR_UNPACK(color, cr, cg, cb, ca);
-
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 + nx, y0 + ny, cr, cg, cb, ca, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 + nx, y1 + ny, cr, cg, cb, ca, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 - nx, y1 - ny, cr, cg, cb, ca, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 - nx, y0 - ny, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 + nx, y0 + ny, color, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 + nx, y1 + ny, color, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 - nx, y1 - ny, color, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 - nx, y0 - ny, color, wu, wv };
 
 	dl->indices[dl->idx_count++] = base + 0;
 	dl->indices[dl->idx_count++] = base + 1;
@@ -336,6 +362,7 @@ void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 	dl->indices[dl->idx_count++] = base + 0;
 
 	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
+	dl->draw_calls[dl->draw_call_count - 1].vtx_count += 4;
 }
 
 bool wz_widget_is_equal(WzWidget a, WzWidget b)
@@ -2238,27 +2265,31 @@ void wz_draw(WzWidget* boxes_indices)
 			// Texture item
 			if (item.type == ItemType_Texture)
 			{
+				WzTexture* t = &item.val.texture;
+				float tw = t->tex_w > 0 ? t->tex_w : t->w;
+				float th = t->tex_h > 0 ? t->tex_h : t->h;
 				wz_dl_add_textured_quad(dl,
-					item.val.texture.data,
+					t->data,
 					widget->actual_x, widget->actual_y,
 					widget->actual_w, widget->actual_h,
-					0, 0, item.val.texture.w, item.val.texture.h,
-					item.val.texture.w, item.val.texture.h,
+					t->src_x, t->src_y, t->w, t->h,
+					tw, th,
 					0xFFFFFFFF);
 			}
 
-			// Dropdown arrow — downward filled triangle, sized to fit parent
-			if (item.type == ItemType_DropdownIcon && wz->dropdown_icon_texture.data)
+			// Dropdown arrow — drawn from font 0 atlas
+			if (item.type == ItemType_DropdownIcon && wz->fonts_count > 0)
 			{
 				float icon_w = (float)wz->dropdown_icon_w;
 				float icon_h = (float)wz->dropdown_icon_h;
 				float dx = widget->actual_x + (widget->actual_w - icon_w) / 2;
 				float dy = widget->actual_y + (widget->actual_h - icon_h) / 2;
+				WzFont* font = &wz->fonts[0];
 				wz_dl_add_textured_quad(dl,
-					wz->dropdown_icon_texture.data,
+					font->atlas_texture.data,
 					dx, dy, icon_w, icon_h,
-					0, 0, icon_w, icon_h,
-					icon_w, icon_h,
+					wz->dropdown_atlas_x, wz->dropdown_atlas_y, icon_w, icon_h,
+					(float)font->atlas_w, (float)font->atlas_h,
 					widget->font_color);
 			}
 

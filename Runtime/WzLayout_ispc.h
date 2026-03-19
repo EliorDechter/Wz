@@ -7,6 +7,11 @@
 #pragma once
 #include <stdint.h>
 
+#if !defined(__cplusplus)
+#include <stdbool.h>
+#endif
+
+
 
 #ifdef __cplusplus
 namespace ispc { /* namespace */
@@ -39,7 +44,7 @@ namespace ispc { /* namespace */
 
 #ifndef __ISPC_STRUCT_WzChunk__
 #define __ISPC_STRUCT_WzChunk__
-struct WzChunkOld {
+struct WzChunk {
     float pad_left;
     float pad_right;
     float pad_top;
@@ -74,7 +79,7 @@ struct WzChunkOld {
 
 #ifndef __ISPC_STRUCT_WzSlot__
 #define __ISPC_STRUCT_WzSlot__
-struct WzSlotOld {
+struct WzSlot {
     float min_width[8];
     float min_height[8];
     float flex[8];
@@ -101,7 +106,7 @@ struct WzSlotOld {
 #if defined(__cplusplus) && (! defined(__ISPC_NO_EXTERN_C) || !__ISPC_NO_EXTERN_C )
 extern "C" {
 #endif // __cplusplus
-    extern void wz_layout_chunks(struct WzChunkOld * chunks, struct WzSlotOld * slots, int32_t num_chunks);
+    extern void wz_layout_chunks(struct WzChunk * chunks, struct WzSlot * slots, int32_t num_chunks);
 #if defined(__cplusplus) && (! defined(__ISPC_NO_EXTERN_C) || !__ISPC_NO_EXTERN_C )
 } /* end extern C */
 #endif // __cplusplus

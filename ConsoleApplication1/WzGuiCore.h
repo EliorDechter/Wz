@@ -259,6 +259,8 @@ typedef enum WzBorderStyle
 typedef struct wzrd_texture {
 	void* data;
 	float w, h;
+	float src_x, src_y;      // source offset within texture (for atlas sub-regions)
+	float tex_w, tex_h;      // actual texture dimensions (0 = same as w,h)
 } WzTexture;
 
 typedef struct WzGlyph {
@@ -438,15 +440,17 @@ typedef struct WzDrawCommandBuffer {
 #define WZ_MAX_DRAW_CALLS 256
 
 typedef struct WzVertex {
-	float x, y;       // screen position (matches SDL_FPoint)
-	float r, g, b, a; // color (matches SDL_FColor)
-	float u, v;       // texture coordinates (matches SDL_FPoint)
+	float x, y;        // screen position
+	unsigned int color; // packed RGBA (0xRRGGBBAA)
+	float u, v;         // texture coordinates
 } WzVertex;
 
 typedef struct WzDrawCall {
 	void* texture;           // SDL_Texture* or NULL for solid geometry
 	unsigned idx_offset;     // start index in the index buffer
 	unsigned idx_count;      // number of indices for this call
+	unsigned vtx_offset;     // first vertex used by this draw call
+	unsigned vtx_count;      // number of vertices used by this draw call
 	WzRect clip_rect;        // scissor rect
 	bool has_clip;
 } WzDrawCall;
@@ -868,6 +872,10 @@ typedef struct WzGui
 	int dropdown_icon_w, dropdown_icon_h;
 	WzTexture dropdown_icon_texture;
 
+	// Icon regions packed into font 0 atlas (UV coords in pixels)
+	float dropdown_atlas_x, dropdown_atlas_y; // top-left pixel in atlas
+	float x_icon_atlas_x, x_icon_atlas_y;     // top-left pixel in atlas
+
 	// New 3.15 for layouting
 	WzChunk chunks[MAX_NUM_WIDGETS];
 	unsigned chunks_count;
@@ -1016,6 +1024,7 @@ void wz_font_set_atlas_texture(unsigned font_id, WzTexture texture);
 void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h);
 void wz_create_dropdown_icon(void);
 void wz_set_dropdown_icon_texture(WzTexture texture);
+void wz_pack_icons_into_atlas(void);
 
 // Core API
 void wz_set_string_size_callback(void (*get_string_size)(char*, unsigned, unsigned, unsigned, float*, float*));

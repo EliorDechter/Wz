@@ -239,6 +239,8 @@ void WSDL_WzEnd(WzGui* canvas)
 	// WzVertex layout matches SDL_Vertex exactly: {float x,y}, {float r,g,b,a}, {float u,v}
 	SDL_Vertex* sdl_verts = (SDL_Vertex*)dl->vertices;
 
+	int adjusted_indices[WZ_MAX_INDICES];
+
 	for (unsigned i = 0; i < dl->draw_call_count; ++i)
 	{
 		WzDrawCall* dc = &dl->draw_calls[i];
@@ -251,9 +253,13 @@ void WSDL_WzEnd(WzGui* canvas)
 			SDL_SetRenderClipRect(renderer, NULL);
 		}
 
+		for (unsigned j = 0; j < dc->idx_count; ++j) {
+			adjusted_indices[j] = dl->indices[dc->idx_offset + j] - (int)dc->vtx_offset;
+		}
+
 		SDL_RenderGeometry(renderer, (SDL_Texture*)dc->texture,
-			sdl_verts, (int)dl->vtx_count,
-			dl->indices + dc->idx_offset, (int)dc->idx_count);
+			sdl_verts + dc->vtx_offset, (int)dc->vtx_count,
+			adjusted_indices, (int)dc->idx_count);
 	}
 
 	SDL_SetRenderClipRect(renderer, NULL);
@@ -565,7 +571,7 @@ void test_gui(WzGui* wz)
 
 	WzWidget window = wz_vbox(window0);
 	WzWidget menu = wz_vbox(window);
-	wz_widget_set_border(menu, WZ_BORDER_TYPE_DEFAULT);
+	wz_widget_set_border(menu, WZ_BORDER_RAISED);
 	wz_widget_set_size(menu, 200, 800);
 	wz_widget_set_color(menu, 0xffffffff);
 

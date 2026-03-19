@@ -19,7 +19,7 @@ void editor_seperator_horizontal(WzWidget parent)
 {
 	WzWidget w = wz_widget(parent);
 	wz_widget_set_max_h(w, 2);
-	wz_widget_set_border(w, WZ_BORDER_TYPE_BOTTOM_LINE);
+	wz_widget_set_border(w, WZ_BORDER_BOTTOM_LINE);
 }
 
 void editor_seperator_vertical(WzWidget parent)
@@ -92,14 +92,14 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 			wz_widget_set_child_gap(panel, 15);
 
 			bool b = false;
-			WzWidget button = wz_command_button(panel, wz_str_create("Add Object"), &b);
+			WzWidget button = wz_command_button(panel, wz_str_create("Add Object"), &b, 0);
 
 			if (b)
 			{
 				g_editor.create_object_dialog_active = true;
 			}
 
-			wz_command_toggle(panel, wz_str_create("Add Polygon"), &g_game.polygon_adding_active);
+			wz_command_toggle(panel, wz_str_create("Add Polygon"), &g_game.polygon_adding_active, 0);
 
 			wz_toggle_icon(panel, &draw_command_button, editor_textures[EditorTextureButton]);
 
@@ -245,19 +245,19 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 					wz_label(row, wz_str_create("Name:"));
 					//WzWidget wdg = wz_input_box(name.val, &name.len, 10, row);
 
-					wz_widget_set_border(row, WZ_BORDER_TYPE_DEFAULT);
+					wz_widget_set_border(row, WZ_BORDER_RAISED);
 					{
 						WzWidget buttons_panel = wz_hpanel(dialog);
 						{
 							bool b1;
 
-							wz_command_button(buttons_panel, wz_str_create("OK"), &b1);
+							wz_command_button(buttons_panel, wz_str_create("OK"), &b1, 0);
 							if (b1) {
 								ok = true;
 							}
 
 							bool b2;
-							wz_command_button(buttons_panel, wz_str_create("Cancel"), &b2);
+							wz_command_button(buttons_panel, wz_str_create("Cancel"), &b2, 0);
 							if (b2) {
 								cancel = true;
 							}
@@ -366,7 +366,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 			{
 				WzWidgetData* draw_panel_data = wz_widget_get(draw_panel);
 				bool b;
-				WzWidget widg = wz_command_button(draw_panel, wz_str_create("wow"), &b);
+				WzWidget widg = wz_command_button(draw_panel, wz_str_create("wow"), &b, 0);
 				wz_widget_set_size(widg, w, h);
 				wz_widget_set_x(widg, g_editor.drawing_widget_x - draw_panel_data->actual_x);
 				wz_widget_set_y(widg, g_editor.drawing_widget_y - draw_panel_data->actual_y);
