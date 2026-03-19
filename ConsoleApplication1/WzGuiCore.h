@@ -1192,6 +1192,10 @@ void wz_widget_disable(WzWidget widget, bool disable);
 void wz_add_resize_widgets_maintain_aspect_ratio2(WzWidget parent, float* angle);
 void wz_widget_transform(WzWidget widget, float x, float y);
 
+
+void wz_draw_text(unsigned font_id, int x, int y,
+	const char* str, unsigned str_len, unsigned font_color);
+
 // Layout Functions
 void wz_layout(unsigned int index,
 	WzWidgetData* widgets, WzLayoutRect* rects,

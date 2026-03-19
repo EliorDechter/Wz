@@ -375,7 +375,6 @@ static void WSDL_RenderCommandBuffer(SDL_Renderer* renderer, WzDrawCommandBuffer
 
 static void WSDL_WzBeginWidgets(WSDL_Context* context)
 {
-
 	Uint32 flags = SDL_GetWindowFlags(context->window);
 	float mouse_x = 0, mouse_y = 0;
 	if (flags & SDL_WINDOW_MOUSE_FOCUS)
@@ -385,39 +384,7 @@ static void WSDL_WzBeginWidgets(WSDL_Context* context)
 
 	context->gui.mouse_pos.x = mouse_x;
 	context->gui.mouse_pos.y = mouse_y;
-#if 0
 
-	// Mouse Input
-	{
-		float mx, my;
-		Uint32 mflags = SDL_GetMouseState(&mx, &my);
-		printf("%u\n", mflags);
-
-		if (left_mouse == WZ_ACTIVATING)
-		{
-			left_mouse = WZ_ACTIVE;
-		}
-		else if (left_mouse == WZ_DEACTIVATING)
-		{
-			left_mouse = WZ_INACTIVE;
-		}
-
-		if (mflags & SDL_BUTTON_LMASK)
-		{
-			if (left_mouse == WZ_INACTIVE)
-			{
-				left_mouse = WZ_ACTIVATING;
-			}
-		}
-		else
-		{
-			if (left_mouse == WZ_ACTIVE)
-			{
-				left_mouse = WZ_DEACTIVATING;
-			}
-		}
-	}
-#endif
 	wz_begin(WINDOW_WIDTH, WINDOW_HEIGHT,
 		events, events_count, true);
 }
@@ -425,7 +392,10 @@ static void WSDL_WzBeginWidgets(WSDL_Context* context)
 void WSDL_WzEnd(WSDL_Context* context)
 {
 	wz_end();
+}
 
+static void WSDL_WzRender(WSDL_Context* context)
+{
 	SDL_Renderer* renderer = context->renderer;
 	WzDrawList* dl = &context->gui.draw_list;
 
@@ -442,7 +412,8 @@ void WSDL_WzEnd(WSDL_Context* context)
 			SDL_Rect clip = { (int)dc->clip_rect.x, (int)dc->clip_rect.y,
 				(int)dc->clip_rect.w, (int)dc->clip_rect.h };
 			SDL_SetRenderClipRect(renderer, &clip);
-		} else {
+		}
+		else {
 			SDL_SetRenderClipRect(renderer, NULL);
 		}
 
@@ -751,6 +722,7 @@ void WSDL_ContextCreate(WSDL_Context* context, unsigned window_width, unsigned w
 
 	success &= SDL_CreateWindowAndRenderer("my window", window_width, window_height,
 		SDL_WINDOW_RESIZABLE, &window, &renderer);
+	SDL_SetRenderVSync(renderer, 0);
 
 	success &= SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
@@ -795,13 +767,20 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 		wz_font_load(1, data, (unsigned)file_size, 28.0f);
 		SDL_free(data);
 
+		// Font 2: Arial Bold 24px
+		data = (unsigned char*)SDL_LoadFile("C:\\Windows\\Fonts\\ArialBD.ttf", &file_size);
+		if (data) {
+			wz_font_load(2, data, (unsigned)file_size, 24.0f);
+			SDL_free(data);
+		}
+
 		// Upload atlas textures
 		for (unsigned fi = 0; fi < gui_window.gui.fonts_count; fi++) {
 			WzFont* font = &gui_window.gui.fonts[fi];
 			SDL_Texture* atlas_tex = wz_upload_font_atlas_rt(gui_window.renderer, font->atlas_bitmap, font->atlas_w, font->atlas_h);
 			free(font->atlas_bitmap);
 			font->atlas_bitmap = NULL;
-			wz_font_set_atlas_texture(fi, (WzTexture){ .data = atlas_tex, .w = (float)font->atlas_w, .h = (float)font->atlas_h });
+			wz_font_set_atlas_texture(fi, (WzTexture) { .data = atlas_tex, .w = (float)font->atlas_w, .h = (float)font->atlas_h });
 		}
 
 	}
@@ -816,10 +795,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 		free(gui_window.gui.dropdown_icon_bitmap);
 		gui_window.gui.dropdown_icon_bitmap = NULL;
 		SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
-		wz_set_dropdown_icon_texture((WzTexture){
+		wz_set_dropdown_icon_texture((WzTexture) {
 			.data = tex,
-			.w = (float)gui_window.gui.dropdown_icon_w,
-			.h = (float)gui_window.gui.dropdown_icon_h });
+				.w = (float)gui_window.gui.dropdown_icon_w,
+				.h = (float)gui_window.gui.dropdown_icon_h
+		});
 	}
 
 	// X icon
@@ -872,13 +852,26 @@ bool WSDL_IsInteracting(char k)
 	return result;
 }
 
+#define NS_TO_MS(ns) ((float)(ns) / 1000000.0f)
+
+static float perf_avg(float* samples, unsigned* index, float new_val)
+{
+	samples[*index % 60] = new_val;
+	(*index)++;
+	float sum = 0.0f;
+	unsigned count = *index < 60 ? *index : 60;
+	for (unsigned i = 0; i < count; ++i) sum += samples[i];
+	return sum / (float)count;
+}
+
 SDL_AppResult SDL_AppIterate(void* appstate)
 {
-	unsigned time_beginning = SDL_GetTicks();
+	static float delta_time;
 
-	bool success = true;
+	static float smp_total[60], smp_gui[60], smp_layout[60], smp_sdl[60];
+	static unsigned idx_total, idx_gui, idx_layout, idx_sdl;
 
-	ispc_cmds.count = 0;
+	Uint64 time_beginning = SDL_GetTicksNS();
 
 	WSDL_WzBegin(&gui_window);
 	wz_set_gui(&gui_window.gui);
@@ -886,18 +879,23 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	gui_window.gui.ticks_in_ns = SDL_GetTicksNS;
 	gui_window.gui.ticks_in_ms = SDL_GetTicks;
 
+	Uint64 t_gui_begin = SDL_GetTicksNS();
 	WSDL_WzBeginWidgets(&gui_window);
+	{
+		WzWidget window = (WzWidget){ 0 };
+		WzWidget ib_window = wz_vbox_id(window, WIDGET_VBOX1);
 
-	WzWidget window = (WzWidget){ 0 };
-	WzWidget ib_window = wz_vbox_id(window, WIDGET_VBOX1);
+		WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
+		static int selected_text = -1;
+		static bool active;
+		wz_dropdown(ib_window, strs, 3, &selected_text, &active, WIDGET_DROPDOWN1);
+		WzWidget w = wz_label_id(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), WIDGET_LABEL1);
+	}
+	float avg_gui = perf_avg(smp_gui, &idx_gui, NS_TO_MS(SDL_GetTicksNS() - t_gui_begin));
 
-	WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
-	static int selected_text = -1;
-	static bool active;
-	wz_dropdown(ib_window, strs, 3, &selected_text, &active, WIDGET_DROPDOWN1);
-	WzWidget w = wz_label_id(ib_window, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), WIDGET_LABEL1);
-
+	Uint64 t_layout_begin = SDL_GetTicksNS();
 	WSDL_WzEnd(&gui_window);
+	float avg_layout = perf_avg(smp_layout, &idx_layout, NS_TO_MS(SDL_GetTicksNS() - t_layout_begin));
 
 	if (gui_window.gui.copied_text[0])
 	{
@@ -905,29 +903,39 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		gui_window.gui.copied_text[0] = '\0';
 	}
 
-	SDL_SetRenderDrawBlendMode(gui_window.renderer, SDL_BLENDMODE_BLEND);
-	WSDL_RenderCommandBuffer(gui_window.renderer, &ispc_cmds);
-	SDL_RenderPresent(gui_window.renderer);
+	int current_window_w, current_window_h;
+	SDL_GetWindowSize(gui_window.window, &current_window_w, &current_window_h);
 
-	unsigned delta_time = SDL_GetTicks() - time_beginning;
-	if (delta_time < 42)
+	float avg_total = perf_avg(smp_total, &idx_total, delta_time);
+
 	{
-		SDL_Delay(42 - delta_time);
+		static float avg_sdl_prev;
+		const char* labels[] = { "total", "gui", "layout", "sdl" };
+		float avg_values[]  = { avg_total,  avg_gui, avg_layout, avg_sdl_prev };
+
+		char buf[48];
+		float text_h = 0.0f;
+		for (int i = 0; i < 4; ++i)
+		{
+			sprintf(buf, "%s: %.2f ms", labels[i], avg_values[i]);
+			float text_w;
+			wz_get_text_size(buf, 0, (unsigned)strlen(buf), 2, &text_w, &text_h);
+			wz_draw_text(2, (int)(current_window_w - text_w - 8),
+				(int)(8 + i * (text_h + 4)), buf, strlen(buf), WZ_YELLOW);
+		}
+
+		Uint64 t_sdl_begin = SDL_GetTicksNS();
+		WSDL_WzRender(&gui_window);
+		SDL_SetRenderDrawBlendMode(gui_window.renderer, SDL_BLENDMODE_BLEND);
+		WSDL_RenderCommandBuffer(gui_window.renderer, &ispc_cmds);
+		SDL_RenderPresent(gui_window.renderer);
+		avg_sdl_prev = perf_avg(smp_sdl, &idx_sdl, NS_TO_MS(SDL_GetTicksNS() - t_sdl_begin));
 	}
 
-	if (!success)
-	{
-		SDL_ShowSimpleMessageBox(
-			SDL_MESSAGEBOX_ERROR,
-			"Fatal Error",
-			SDL_GetError(),
-			NULL
-		);
-
-		return SDL_APP_FAILURE;
-	}
-
-	events_count = 0;
+	// Cap frame rate
+	delta_time = NS_TO_MS(SDL_GetTicksNS() - time_beginning);
+	if (delta_time < 16.0f)
+		SDL_Delay((Uint64)(16.0f - delta_time));
 
 	return SDL_APP_CONTINUE;
 }
