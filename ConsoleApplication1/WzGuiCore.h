@@ -440,9 +440,9 @@ typedef struct WzDrawCommandBuffer {
 #define WZ_MAX_DRAW_CALLS 256
 
 typedef struct WzVertex {
-	float x, y;        // screen position
-	unsigned int color; // packed RGBA (0xRRGGBBAA)
-	float u, v;         // texture coordinates
+	float x, y;       // screen position
+	float r, g, b, a; // color
+	float u, v;       // texture coordinates
 } WzVertex;
 
 typedef struct WzDrawCall {

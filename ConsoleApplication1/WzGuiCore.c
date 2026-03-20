@@ -275,12 +275,17 @@ static void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
 
 	wz_dl_ensure_draw_call(dl, dl->_current_texture);
 
+	float cr = (float)((color >> 24) & 0xFF) / 255.0f;
+	float cg = (float)((color >> 16) & 0xFF) / 255.0f;
+	float cb = (float)((color >>  8) & 0xFF) / 255.0f;
+	float ca = (float)( color        & 0xFF) / 255.0f;
+
 	int base = (int)dl->vtx_count;
 
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y,     color, u0, v0 };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y,     color, u1, v0 };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y + h, color, u1, v1 };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y + h, color, u0, v1 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y,     cr, cg, cb, ca, u0, v0 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y,     cr, cg, cb, ca, u1, v0 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y + h, cr, cg, cb, ca, u1, v1 };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y + h, cr, cg, cb, ca, u0, v1 };
 
 	dl->indices[dl->idx_count++] = base + 0;
 	dl->indices[dl->idx_count++] = base + 1;
@@ -323,6 +328,10 @@ void wz_dl_add_textured_quad(WzDrawList* dl, void* texture,
 void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 	float thickness, unsigned color)
 {
+	float cr = (float)((color >> 24) & 0xFF) / 255.0f;
+	float cg = (float)((color >> 16) & 0xFF) / 255.0f;
+	float cb = (float)((color >>  8) & 0xFF) / 255.0f;
+	float ca = (float)( color        & 0xFF) / 255.0f;
 	float dx = x1 - x0;
 	float dy = y1 - y0;
 	float len = sqrtf(dx * dx + dy * dy);
@@ -349,10 +358,10 @@ void wz_dl_add_line(WzDrawList* dl, float x0, float y0, float x1, float y1,
 
 	int base = (int)dl->vtx_count;
 
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 + nx, y0 + ny, color, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 + nx, y1 + ny, color, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 - nx, y1 - ny, color, wu, wv };
-	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 - nx, y0 - ny, color, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 + nx, y0 + ny, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 + nx, y1 + ny, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x1 - nx, y1 - ny, cr, cg, cb, ca, wu, wv };
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x0 - nx, y0 - ny, cr, cg, cb, ca, wu, wv };
 
 	dl->indices[dl->idx_count++] = base + 0;
 	dl->indices[dl->idx_count++] = base + 1;

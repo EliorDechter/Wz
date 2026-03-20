@@ -94,6 +94,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -112,6 +113,7 @@
       <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
       <Optimization>Disabled</Optimization>
       <DebugInformationFormat>None</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -126,6 +128,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -144,6 +147,7 @@
       <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
       <Optimization>Disabled</Optimization>
       <DebugInformationFormat>None</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
