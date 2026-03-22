@@ -279,6 +279,11 @@ typedef struct WzFont {
 	int first_char;           // first baked codepoint (typically 32)
 	int num_chars;            // number of baked codepoints (typically 96)
 	float white_uv_u, white_uv_v; // UV coords of a solid white pixel in the atlas
+	// Converts atlas pixels → logical screen pixels for glyph quads.
+	// On HiDPI web: 1/dpr (e.g. 0.667 at 150%). Default: 1.0.
+	// The atlas is baked at physical size (logical * dpr) for 1:1 device pixel
+	// mapping, but the GUI works in logical pixels — this scale bridges the gap.
+	float screen_scale;
 } WzFont;
 
 typedef enum ItemType {
@@ -360,7 +365,11 @@ typedef struct wzrd_handle
 #define WZ_MAX_PATH_DEPTH 8
 
 typedef struct {
+#ifdef _MSC_VER
 	__declspec(align(32)) unsigned ids[WZ_MAX_PATH_DEPTH];
+#else
+	_Alignas(32) unsigned ids[WZ_MAX_PATH_DEPTH];
+#endif
 } WzWidgetPath;
 
 static inline WzWidgetPath wz_path(unsigned id)
@@ -481,7 +490,7 @@ typedef enum
 {
 	WZ_TEXT_ALIGNMENT_LEFT,
 	WZ_TEXT_ALIGNMENT_CENTER,
-};
+} WzTextAlignment;
 
 typedef struct
 {
@@ -1029,7 +1038,7 @@ void wz_pack_icons_into_atlas(void);
 // Core API
 void wz_set_string_size_callback(void (*get_string_size)(char*, unsigned, unsigned, unsigned, float*, float*));
 void wz_widget_set_font(WzWidget widget, unsigned font_id);
-wz_set_gui(WzGui* gui_in);
+void wz_set_gui(WzGui* gui_in);
 WzWidget wz_create_handle();
 void wz_gui_init(WzGui* wz);
 void wz_gui_deinit(WzGui* wz);
@@ -1085,7 +1094,7 @@ void wz_widget_set_stretch_factor(WzWidget handle, unsigned int strech_factor);
 WzWidget wzrd_widget_free(WzWidget parent);
 void wz_widget_add_child(WzWidget parent, WzWidget child);
 WzWidgetData* wz_widget_get(WzWidget handle);
-WzStr wz_str_create(char* str);
+WzStr wz_str_create(const char* str);
 int wzrd_box_get_current_index();
 bool wzrd_box_is_active(WzWidgetData* box);
 bool wzrd_box_is_activating(WzWidgetData* box);
@@ -1143,7 +1152,7 @@ WzWidget wzrd_label_button_raw(WzStr str, bool* result, WzWidget parent, const c
 WzWidget wz_button_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
 WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture, const char* file, unsigned int line);
 WzWidget wz_command_button_raw(WzWidget parent, WzStr str, bool* b, unsigned user_id, const char* file, unsigned int line);
-WzWidget wz_dropdown(WzWidget parent, const WzStr* texts, int texts_count, unsigned* selected_text, bool* active, unsigned user_id);
+WzWidget wz_dropdown(WzWidget parent, const WzStr* texts, int texts_count, int* selected_text, bool* active, unsigned user_id);
 WzWidget wz_dialog_raw(int* x, int* y, unsigned* w, unsigned* h, bool* active, WzStr name, int layer, WzWidget parent, const char* file, unsigned int line);
 WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active, unsigned user_id, const char* file, unsigned int line);
 WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, bool* active, unsigned user_id, const char* file, unsigned int line);
@@ -1206,9 +1215,7 @@ void wz_draw_text(unsigned font_id, int x, int y,
 	const char* str, unsigned str_len, unsigned font_color);
 
 // Layout Functions
-void wz_layout(unsigned int index,
-	WzWidgetData* widgets, WzLayoutRect* rects,
-	unsigned int count, unsigned int* failed);
+void wz_layout(void);
 WzWidget wz_scene(WzScene scene, WzWidget parent, WzTexture texture, int x, int y, unsigned w, unsigned h);
 
 //==============================================================================

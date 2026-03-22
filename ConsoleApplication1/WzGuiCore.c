@@ -5,6 +5,11 @@
 //#define wz_assert(x) (void)(x)
 #define WZRD_UNUSED(x) (void)x
 
+#include <limits.h>
+#include <math.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include "WzGuiCore.h"
 #include "Strings.h"
 #include "WzLayout.h"
@@ -30,6 +35,7 @@ void wz_font_load(unsigned font_id, const unsigned char* ttf_data, unsigned ttf_
 	assert(font_id < 4);
 	WzFont* font = &wz->fonts[font_id];
 	font->pixel_height = pixel_height;
+	font->screen_scale = 1.0f;
 	font->first_char = 32;
 	font->num_chars = 96; // 32..127
 
@@ -411,6 +417,7 @@ void wz_widget_set_pad(WzWidget widget, unsigned pad)
 {
 	WzWidgetData* data = wz_widget_get(widget);
 	WzChunkLayout* layout = &wz->layouts[data->layout_chunk];
+	wz_assert(data->layout_chunk);
 	layout->pad_bottom = pad;
 	layout->pad_top = pad;
 	layout->pad_left = pad;
@@ -1308,7 +1315,7 @@ void wz_log_error(WzLogMessage* arr, unsigned int* count, const char* fmt, ...)
 
 #endif
 
-wz_set_gui(WzGui* gui_in)
+void wz_set_gui(WzGui* gui_in)
 {
 	wz = gui_in;
 }
@@ -2071,15 +2078,17 @@ void wz_draw_text(unsigned font_id, int x, int y,
 			}
 
 			WzGlyph* g = &font->glyphs[c];
-			float glyph_w = g->x1 - g->x0;
-			float glyph_h = g->y1 - g->y0;
+			float glyph_w_atlas = g->x1 - g->x0;
+			float glyph_h_atlas = g->y1 - g->y0;
+			float glyph_w = glyph_w_atlas * font->screen_scale;
+			float glyph_h = glyph_h_atlas * font->screen_scale;
 
 			if (glyph_w > 0 && glyph_h > 0) {
 				wz_dl_add_textured_quad(&wz->draw_list,
 					font->atlas_texture.data,
 					cursor_x + g->xoff, baseline_y + g->yoff,
 					glyph_w, glyph_h,
-					g->x0, g->y0, glyph_w, glyph_h,
+					g->x0, g->y0, glyph_w_atlas, glyph_h_atlas,
 					(float)font->atlas_w, (float)font->atlas_h,
 					font_color);
 			}
@@ -2587,7 +2596,7 @@ void wz_handle_input()
 	// Mouse interaction
 	if (wz->enable_input)
 	{
-		wz_input(wz->boxes_indices, MAX_NUM_WIDGETS);
+		wz_input((int*)wz->boxes_indices, MAX_NUM_WIDGETS);
 		wzrd_handle_cursor();
 		wzrd_handle_border_resize();
 	}
@@ -2780,8 +2789,8 @@ void wz_widget_get_all_children(WzWidget widget, WzWidget* children, unsigned* c
 }
 WzWidget wz_tree_add_row_raw(WzTree* tree, WzStr str, WzTexture texture, unsigned depth, bool* expand, bool* selected, WzTreeNodeData* node, const char* file, unsigned line)
 {
-	const toggle_size = 20;
-	const icon_size = 20;
+	const int toggle_size = 20;
+	const int icon_size = 20;
 
 	WzWidget row = wz_hbox(tree->menu);
 	wz_widget_set_user_id(row, (unsigned)(uintptr_t)node);
@@ -2812,7 +2821,7 @@ WzWidget wz_tree_add_row_raw(WzTree* tree, WzStr str, WzTexture texture, unsigne
 	wz_widget_set_max_constraints(hline, 10, 10);
 	wz_widget_add_source(hline, file, line);
 
-	WzWidget icon = wz_texture(row, texture, icon_size, icon_size);
+	WzWidget icon = wz_texture_raw(row, texture, icon_size, icon_size, __FILE__, __LINE__);
 	wz_widget_add_source(icon, file, line);
 
 	WzWidget label = wz_label_id_raw(row, str, 2, file, line);
@@ -2874,6 +2883,9 @@ static void wz_update_scroll_window(WzWidget widget, WzInputState* input_state)
 		input_state->offset_x = (text_up_to_cursor_w - box_w + 1);
 	}
 }
+
+static int wz_input_word_start(const char* buf, int pos);
+static int wz_input_word_end(const char* buf, int len, int pos);
 
 void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 {
@@ -3079,7 +3091,7 @@ void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 				{
 					stb_textedit_paste(input_state, &input_state->textedit_state,
 						wz->pasted_text, strlen(wz->pasted_text));
-					SDL_free(wz->pasted_text);
+					free(wz->pasted_text);
 					wz->pasted_text = NULL;
 					handled = true;
 					break;
@@ -3188,7 +3200,7 @@ void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 					{
 						stb_textedit_paste(input_state, &input_state->textedit_state,
 							wz->pasted_text, strlen(wz->pasted_text));
-						SDL_free(wz->pasted_text);
+						free(wz->pasted_text);
 						wz->pasted_text = NULL;
 					}
 					handled = true;
@@ -3352,7 +3364,7 @@ void wz_text_box_run(WzWidget widget, WzInputState* input_state)
 	}
 }
 
-void wz_tree_node_get_children(WzTree* tree, WzTreeNode node, WzTreeNodeData** children,
+void wz_tree_node_get_children(WzTree* tree, WzTreeNode node, WzTreeNode** children,
 	unsigned* children_count)
 {
 	WzTreeNodeData* n = wz_tree_get_node(tree, node);
@@ -3633,19 +3645,6 @@ void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
 
 void wz_dropdown_run(WzWidgetData* data)
 {
-	//if (*data->active)
-	if (1)
-	{
-#if 0
-		bool is_selected;
-		unsigned items[] = { 0, 1, 2 };
-		unsigned unique_ids[] = { 100, 101, 102 };
-		wzrd_label_list(data->handle, texts, texts_count, items, unique_ids, w, 20, WZ_WHITE,
-			0, selected_text, &is_selected);
-#endif
-		WzWidget w = wz_widget(data->handle);
-		wz_widget_set_size(w, 50, 50);
-	}
 }
 
 void wz_clean()
@@ -3657,7 +3656,7 @@ void wz_clean()
 	memset(wz->layouts, 0, MAX_NUM_WIDGETS * sizeof(*wz->layouts));
 }
 
-void wz_layout_newest()
+void wz_layout()
 {
 	// Bottom sizing up pass
 	// TODO: The algorithm fails when traversing ALL widgets since they will write 0 to (0, 0)
@@ -3686,7 +3685,7 @@ void wz_layout_newest()
 		layout->total_children_min_width = total_children_min_width;
 		layout->total_children_min_height = total_children_min_height;
 		layout->flex_total = flex_total;
-
+		
 		// TODO: Remove branch
 		if (i > 0 && !(layout->layout_type & WZ_LAYOUT_NONE))
 		{
@@ -3702,7 +3701,7 @@ void wz_layout_newest()
 				layout->pad_top + layout->pad_bottom +
 				layout->border_size * 2:
 				max_min_height + layout->pad_top + layout->pad_bottom + layout->border_size * 2;
-
+			
 			wz->chunks[layout->parent_chunk].min_width[layout->parent_slot] =
 				new_min_width > wz->chunks[layout->parent_chunk].min_width[layout->parent_slot] ?
 				new_min_width :
@@ -3850,7 +3849,7 @@ void wz_end()
 	//wz_inherit(wz->widgets[1].handle);
 
 	// First layout
-	wz_layout_newest();
+	wz_layout();
 	//wz_do_layout_refactor_me(1, wz->widgets_count);
 
 	// Check all ids are unique
@@ -4138,7 +4137,7 @@ WzWidget wz_toggle_raw(WzWidget parent, unsigned w, unsigned h, unsigned int col
 
 WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsigned h, bool* active,
 	unsigned user_id, const char* file_name, unsigned int line) {
-	WzWidget handle = wz_widget(parent, file_name, line);
+	WzWidget handle = wz_widget_raw(parent, file_name, line);
 	wz_widget_set_user_id(handle, user_id);
 	wz_widget_add_source(handle, file_name, line);
 	wz_widget_set_max_constraints(handle, w, h);
@@ -4160,7 +4159,7 @@ WzWidget wz_icon_toggle_raw(WzWidget parent, WzTexture texture, unsigned w, unsi
 WzWidget wz_texture_raw(WzWidget parent, WzTexture texture,
 	unsigned w, unsigned h, const char* file_name, unsigned int line)
 {
-	WzWidget handle = wz_widget(parent, file_name, line);
+	WzWidget handle = wz_widget_raw(parent, file_name, line);
 	wz_widget_add_source(handle, file_name, line);
 	wz_widget_set_size(handle, w, h);
 	wz_widget_add_texture(handle, texture, w, h);
@@ -4172,7 +4171,7 @@ WzWidget wz_button_icon_raw(WzWidget parent, bool* result, WzTexture texture,
 	const char* file, unsigned int line) {
 
 	const int icon_size = 32;
-	WzWidget icon = wz_texture(parent, texture, 16, 16);
+	WzWidget icon = wz_texture_raw(parent, texture, 16, 16, __FILE__, __LINE__);
 	wz_widget_add_source(icon, file, line);
 	wz_widget_set_border(icon, WZ_BORDER_RAISED);
 
@@ -4190,7 +4189,7 @@ WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture,
 	const char* file, unsigned int line) {
 
 	const int icon_size = 32;
-	WzWidget icon = wz_texture(parent, texture, 16, 16);
+	WzWidget icon = wz_texture_raw(parent, texture, 16, 16, __FILE__, __LINE__);
 	wz_widget_add_source(icon, file, line);
 	wz_widget_set_border(icon, WZ_BORDER_RAISED);
 
@@ -4302,6 +4301,7 @@ WzWidget wz_label_raw(WzWidget handle, WzStr str, const char* file, unsigned int
 {
 	float w = 0, h = 0;
 	wz_get_text_size(str.str, 0, strlen(str.str), 0, &w, &h);
+
 
 	WzWidget parent = wz_widget_raw(handle, file, line);
 	wz_widget_set_size(parent, (int)w, (int)h);
@@ -4447,7 +4447,7 @@ WzWidget wz_dialog_raw(int* x, int* y, unsigned* w, unsigned* h,
 	wz_widget_set_color(name, 0);
 
 	wz_spacer(bar);
-	WzWidget quit_button = wz_button_icon(bar, &active, wz->x_icon);
+	WzWidget quit_button = wz_button_icon(bar, active, wz->x_icon);
 
 	if (wz_widget_is_interacting_tree(bar) && !wz_widget_is_interacting(quit_button))
 	{
@@ -4560,7 +4560,7 @@ WzWidget wz_dropdown(WzWidget parent,
 		wz_widget_set_y(list, h);
 		wz_widget_set_z(list, 1);
 		wz_widget_set_border_flat(list, WZ_BLACK);
-		wz_widget_set_pad(list, 0);
+		wz_widget_set_pad(list, 2);
 		wz_widget_set_child_gap(list, 0);
 
 		for (unsigned i = 0; i < texts_count; ++i)
@@ -4568,7 +4568,6 @@ WzWidget wz_dropdown(WzWidget parent,
 			WzWidget label = wz_label_id_raw(list, texts[i], i + 1, __FILE__, __LINE__);
 			wz_widget_set_w(label, w - 2);
 			wz_widget_set_color(label, WZ_WHITE);
-			wz_widget_set_pad(label, 2);
 			
 			if (wz_widget_is_hovered(label))
 			{
@@ -4941,7 +4940,7 @@ void wz_log(WzLogMessage* arr, unsigned int* count, const char* fmt, ...)
 	message.str[0] = 0;
 	va_list args;
 	va_start(args, fmt);
-	vsprintf_s(message.str, WZ_LOG_MESSAGE_MAX_SIZE, fmt, args);
+	vsprintf(message.str, fmt, args);
 	va_end(args);
 
 	arr[*count] = message;

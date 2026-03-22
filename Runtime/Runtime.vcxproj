@@ -75,16 +75,16 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\elior\OneDrive\Desktop\SDL-release-3.2.20\include\SDL3;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)packages\raylib.5.5.0\build\native\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\elior\OneDrive\Desktop\SDL-release-3.2.20\include\SDL3;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)packages\raylib.5.5.0\build\native\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\elior\OneDrive\Desktop\SDL-release-3.2.20\include\SDL3;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)packages\raylib.5.5.0\build\native\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\elior\OneDrive\Desktop\SDL-release-3.2.20\include\SDL3;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)packages\raylib.5.5.0\build\native\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -92,13 +92,15 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\include;C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\lib\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>raylib.lib;winmm.lib;gdi32.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -109,15 +111,15 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
-      <Optimization>Disabled</Optimization>
-      <DebugInformationFormat>None</DebugInformationFormat>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\include;C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\lib\Win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>raylib.lib;winmm.lib;gdi32.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -126,13 +128,15 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\include;C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>raylib.lib;winmm.lib;gdi32.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -143,31 +147,23 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;C:\Users\Elior\Desktop\SDL-release-3.2.26\include;C:\Users\Elior\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\include;C:\Users\Elior\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\include</AdditionalIncludeDirectories>
-      <Optimization>Disabled</Optimization>
-      <DebugInformationFormat>None</DebugInformationFormat>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\include;C:\Users\Elior\source\repos\AdventureWizard\ConsoleApplication1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(SolutionDir)packages\raylib.5.5.0\build\native\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>raylib.lib;winmm.lib;gdi32.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Main.c" />
+    <ClCompile Include="WzResizeHook.c" />
     <ClCompile Include="..\ConsoleApplication1\WzLayoutScalar.c" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\Desktop\SDL-release-3.2.26\VisualC\SDL\SDL.vcxproj">
-      <Project>{81ce8daf-ebb2-4761-8e45-b71abcca8c68}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\..\Desktop\SDL_image-release-3.2.4\SDL_image-release-3.2.4\VisualC\SDL_image.vcxproj">
-      <Project>{2bd5534e-00e2-4bea-ac96-d9a92ea24696}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\..\Desktop\SDL_ttf-preview-3.1.0\SDL_ttf-preview-3.1.0\VisualC\SDL_ttf.vcxproj">
-      <Project>{dddbd07d-dc76-4af6-8d02-3e2deb6ee255}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\ConsoleApplication1\ConsoleApplication1.vcxproj">
       <Project>{9235933f-21fb-4d97-acdd-b864864dab22}</Project>
     </ProjectReference>

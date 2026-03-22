@@ -1,0 +1,80 @@
+# ============================================================
+# WebAssembly build via Emscripten
+#
+# Prerequisites:
+#   1. Install emsdk: https://emscripten.org/docs/getting_started/downloads.html
+#      emsdk install latest && emsdk activate latest
+#   2. Build Raylib for Emscripten:
+#      cd raylib/src && emmake make PLATFORM=PLATFORM_WEB
+#      This produces raylib/src/libraylib.a
+#
+# Usage:
+#   source /path/to/emsdk/emsdk_env.sh   (or emsdk_env.bat on Windows)
+#   make -f Makefile.wasm
+#   make -f Makefile.wasm RAYLIB_SRC=/path/to/raylib/src
+# ============================================================
+
+CC          = emcc
+RAYLIB_SRC  ?= $(HOME)/raylib/src
+RAYLIB_LIB  ?= $(HOME)/raylib/build-wasm/raylib/libraylib.a
+OUT_DIR     = web
+OUT         = $(OUT_DIR)/index.html
+
+RUNTIME_DIR = Runtime
+ENGINE_DIR  = ConsoleApplication1
+
+SOURCES = \
+	$(RUNTIME_DIR)/Main.c \
+	$(ENGINE_DIR)/WzGuiCore.c \
+	$(ENGINE_DIR)/WzLayoutScalar.c \
+	$(ENGINE_DIR)/Actions.c \
+	$(ENGINE_DIR)/Animation.c \
+	$(ENGINE_DIR)/ArrayList.c \
+	$(ENGINE_DIR)/FileName.c \
+	$(ENGINE_DIR)/GameState.c \
+	$(ENGINE_DIR)/Handle.c \
+	$(ENGINE_DIR)/HashTable.c \
+	$(ENGINE_DIR)/Inventory.c \
+	$(ENGINE_DIR)/Parser.c \
+	$(ENGINE_DIR)/Pathfinding.c \
+	$(ENGINE_DIR)/Renderer.c \
+	$(ENGINE_DIR)/Serialization.c \
+	$(ENGINE_DIR)/Strings.c \
+	$(ENGINE_DIR)/Timer.c \
+	$(ENGINE_DIR)/file_handling.c
+
+INCLUDES = \
+	-I$(RUNTIME_DIR) \
+	-I$(ENGINE_DIR) \
+	-I$(RAYLIB_SRC)
+
+CFLAGS = \
+	-std=c99 \
+	-O2 \
+	-Wall \
+	-D_CRT_SECURE_NO_WARNINGS \
+	-DPLATFORM_WEB \
+	$(INCLUDES)
+
+LDFLAGS = \
+	$(RAYLIB_LIB) \
+	-s USE_GLFW=3 \
+	-s FULL_ES3=1 \
+	-s ALLOW_MEMORY_GROWTH=1 \
+	-s INITIAL_MEMORY=67108864 \
+	--preload-file $(OUT_DIR)/fonts@/fonts \
+	--shell-file $(RAYLIB_SRC)/minshell.html
+
+
+all: $(OUT_DIR) $(OUT)
+
+$(OUT_DIR):
+	mkdir -p $(OUT_DIR)
+
+$(OUT): $(SOURCES)
+	$(CC) $(CFLAGS) $(SOURCES) $(LDFLAGS) -o $(OUT)
+
+clean:
+	rm -rf $(OUT_DIR)
+
+.PHONY: all clean

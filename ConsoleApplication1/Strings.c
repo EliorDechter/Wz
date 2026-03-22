@@ -8,10 +8,10 @@ str1024 str1024_create(const char* format, ...) {
 		return result;
 
 	va_start(arg, format);
-	vsnprintf_s(result.val, 1024, 1024, format, arg);
+	vsnprintf(result.val, 1024, format, arg);
 	va_end(arg);
 
-	result.len = strnlen_s(result.val, 128);
+	result.len = (int)strlen(result.val);
 
 	return result;
 }
@@ -27,10 +27,10 @@ str128 str128_create(const char* format, ...) {
 	str128 result = { 0 };
 
 	va_start(arg, format);
-	vsnprintf_s(result.val, 128, 128, format, arg);
+	vsnprintf(result.val, 128, format, arg);
 	va_end(arg);
 
-	result.len = (int)strnlen_s(result.val, 128);
+	result.len = (int)strlen(result.val);
 
 	return result;
 }
