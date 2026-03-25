@@ -74,7 +74,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 	WzWidget window = wz_vpanel(window0);
 	wz_widget_set_max_constraints(window, g_platform.window_width, g_platform.window_height);
 
-	wz_widget_set_cross_axis_alignment(window, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+	wz_widget_fill_cross_axis(window);
 
 	static bool draw_command_button;
 
@@ -142,7 +142,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 
 		WzWidget bottom_panel = wz_hpanel(window);
 		wz_widget_set_expanded(bottom_panel);
-		wz_widget_set_cross_axis_alignment(bottom_panel, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+		wz_widget_fill_cross_axis(bottom_panel);
 
 		//editor_left_panel(bottom_panel);
 		{
@@ -189,11 +189,11 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 
 		WzWidget panel = wz_hpanel(bottom_panel);
 		wz_widget_set_expanded(panel);
-		wz_widget_set_cross_axis_alignment(panel, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+		wz_widget_fill_cross_axis(panel);
 
 		draw_panel = wz_panel(panel);
 		wz_widget_set_expanded(draw_panel);
-		wz_widget_set_cross_axis_alignment(draw_panel, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+		wz_widget_fill_cross_axis(draw_panel);
 		wz_widget_clip(draw_panel);
 
 		wz_frame(draw_panel, 100, 100, wz_str_create("wow"), EDITOR_WIDGET_DRAW_FRAME);
@@ -240,7 +240,7 @@ void editor_run(WzGui* wz, PlatformTargetTexture target_texture,
 #endif
 					WzWidget form = wz_vpanel(panel);
 					wz_widget_set_expanded(form);
-					wz_widget_set_cross_axis_alignment(form, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+					wz_widget_fill_cross_axis(form);
 					WzWidget row = wz_hpanel(form);
 					wz_label(row, wz_str_create("Name:"));
 					//WzWidget wdg = wz_input_box(name.val, &name.len, 10, row);

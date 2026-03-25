@@ -1,0 +1,6 @@
+PROJECTS
+Open Source Cross-Platform GUI Library: Developed a low-level, open-source UI library and graphics
+engine in C, C++, and Claude (AI-assisted), focusing on high-performance memory management and custom
+architectural design. Optimized core computational bottlenecks using Intel ISPC for SIMD hardware acceleration
+to achieve maximum throughput. Leveraged AI-assisted programming to accelerate the prototyping of
+performance-critical data structures and complex systems logic within an open-source framework.

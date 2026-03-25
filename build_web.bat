@@ -26,7 +26,7 @@ set RAYLIB_LIB_DIR=C:\Users\Elior\source\repos\raylib\build-wasm\raylib
   ConsoleApplication1\Strings.c ^
   ConsoleApplication1\Timer.c ^
   ConsoleApplication1\file_handling.c ^
-  -Os -Wall -msimd128 ^
+  -O2 -Wall -msimd128 ^
   -I. -IRuntime -IConsoleApplication1 -I"ConsoleApplication1 - Copy" -I%RAYLIB_SRC% ^
   -L. -L%RAYLIB_LIB_DIR% -lraylib ^
   -s USE_GLFW=3 ^
@@ -34,6 +34,7 @@ set RAYLIB_LIB_DIR=C:\Users\Elior\source\repos\raylib\build-wasm\raylib
   -s ALLOW_MEMORY_GROWTH=1 ^
   -s INITIAL_MEMORY=67108864 ^
   --preload-file web\fonts@/fonts ^
+  --preload-file web\data@/data ^
   --shell-file %RAYLIB_SRC%\minshell.html ^
   -DPLATFORM_WEB ^
   -o web\index.html

@@ -1,0 +1,4 @@
+SOFTWARE SKILLS:
+Programming languages: C/C++, Rust, C#, Java
+Kernel development: U-Boot, Buildroot, Ethtool, Linux PHY/MDIO/MAC drivers
+Tools: Claude, Codex, Unity, GLSL, Opengl, Vulkan, Visual Studio, OOP, Design Patterns

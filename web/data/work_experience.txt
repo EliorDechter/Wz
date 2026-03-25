@@ -1,0 +1,25 @@
+WORK EXPERIENCE
+
+Embedded engineer - Marvell Technology, Inc. 2022-2023
+-------------------------------------------------------------------
+-Contributed to Marvell's Switchdev initiative, focusing on Linux kernel integration for
+networking hardware.
+-Deployed software on Switches used for Amazon Go stores, and Cisco devices, while
+contributing to Linux Open Source.
+-Developed a custom Linux kernel driver for an I2C CPLD multiplexer, improving hardware
+interfacing and expanding support for 4+ peripheral devices per board.
+Utilized embedded Linux tools including U-Boot, Buildroot, and kernel configuration systems.
+-Designed and implemented a custom ELF parser to extract symbol tables, resolving critical
+linkage errors.
+-Performed hands-on lab work involving setup, debugging, and booting of Marvell Switch devices
+
+
+Software Developer - High-Frequency Trading Systems, EigerX                 2022
+----------------------------------------------------------------------
+-Developed low-latency trading software for high-frequency trading (HFT) strategies, powering
+millions of trades and managing 100k+ of dollars in daily trading volume, with direct impact on
+profitability.
+-Implemented and maintained exchange connectivity modules across 5+ major trading venues,
+enabling real-time, reliable communication and expanding global market access.
+-Ported latency-sensitive components of the Go code-base to Rust, achieving a 20% reduction in
+execution latency, improving order execution speed and system throughput

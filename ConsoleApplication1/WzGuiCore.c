@@ -25,6 +25,9 @@
 
 static WzGui* wz;
 
+// Forward declarations
+void wz_widget_set_w(WzWidget widget, unsigned w);
+
 //==============================================================================
 // Font Atlas
 //==============================================================================
@@ -103,6 +106,13 @@ void wz_font_set_atlas_texture(unsigned font_id, WzTexture texture)
 	wz->fonts[font_id].atlas_texture = texture;
 }
 
+void wz_widget_get_cached_size(WzWidget widget, unsigned* w, unsigned* h)
+{
+	WzRect rect = wz->cached_rects[widget.handle];
+	*w = rect.w;
+	*h = rect.h;
+}
+
 void wz_create_dropdown_icon(void)
 {
 	// Render a downward triangle at 4x resolution, then downsample.
@@ -152,6 +162,60 @@ void wz_create_dropdown_icon(void)
 	wz->dropdown_icon_h = final_h;
 }
 
+// Rasterize an anti-aliased X icon using oversample-then-downsample — claude 2026-03-24
+void wz_create_close_icon(void)
+{
+	int final_w = 16, final_h = 16; // match button size exactly — claude 2026-03-24
+	int scale = 8;                  // 8x oversample: each final pixel = 64 samples
+	int big_w = final_w * scale;   // 128
+	int big_h = final_h * scale;   // 128
+	float margin = 16.0f;          // 2 final pixels from edge
+	float thick  = 8.0f;           // ~1.5 final pixels wide after feather
+
+	unsigned char* big = (unsigned char*)calloc(big_w * big_h, 1);
+
+	// \ diagonal endpoints
+	float x0a = margin,         y0a = margin;
+	float x1a = big_w - margin, y1a = big_h - margin;
+	// / diagonal endpoints
+	float x0b = big_w - margin, y0b = margin;
+	float x1b = margin,         y1b = big_h - margin;
+
+	float dxa = x1a - x0a, dya = y1a - y0a;
+	float lena = sqrtf(dxa * dxa + dya * dya);
+	float dxb = x1b - x0b, dyb = y1b - y0b;
+	float lenb = sqrtf(dxb * dxb + dyb * dyb);
+
+	for (int py = 0; py < big_h; py++) {
+		for (int px = 0; px < big_w; px++) {
+			float da = fabsf(dya * (px - x0a) - dxa * (py - y0a)) / lena;
+			float db = fabsf(dyb * (px - x0b) - dxb * (py - y0b)) / lenb;
+			float d  = da < db ? da : db;
+			float half = thick * 0.5f;
+			// Hard threshold — box-filter downsample provides AA naturally — claude 2026-03-24
+			if (d < half)
+				big[py * big_w + px] = 255;
+		}
+	}
+
+	unsigned char* final_bmp = (unsigned char*)calloc(final_w * final_h, 1);
+	int block = scale * scale;
+	for (int fy = 0; fy < final_h; fy++) {
+		for (int fx = 0; fx < final_w; fx++) {
+			int sum = 0;
+			for (int sy = 0; sy < scale; sy++)
+				for (int sx = 0; sx < scale; sx++)
+					sum += big[(fy * scale + sy) * big_w + (fx * scale + sx)];
+			final_bmp[fy * final_w + fx] = (unsigned char)(sum / block);
+		}
+	}
+	free(big);
+
+	wz->close_icon_bitmap = final_bmp;
+	wz->close_icon_w      = final_w;
+	wz->close_icon_h      = final_h;
+}
+
 void wz_set_dropdown_icon_texture(WzTexture texture)
 {
 	wz->dropdown_icon_texture = texture;
@@ -166,30 +230,27 @@ void wz_pack_icons_into_atlas(void)
 	int aw = font->atlas_w;
 	int ah = font->atlas_h;
 
-	// Place dropdown icon at bottom-left of atlas: (0, ah - dropdown_h - x_icon_h - 2)
-	int dd_w = wz->dropdown_icon_w;  // 10
-	int dd_h = wz->dropdown_icon_h;  // 7
+	// Place close (X) icon at the very bottom of atlas — claude 2026-03-24
+	int ci_w = wz->close_icon_w;
+	int ci_h = wz->close_icon_h;
+	int ci_x = 0;
+	int ci_y = ah - ci_h;
+	for (int y = 0; y < ci_h; y++)
+		for (int x = 0; x < ci_w; x++)
+			atlas[(ci_y + y) * aw + (ci_x + x)] = wz->close_icon_bitmap[y * ci_w + x];
+	wz->x_icon_atlas_x = (float)ci_x;
+	wz->x_icon_atlas_y = (float)ci_y;
+
+	// Place dropdown icon above close icon — claude 2026-03-24
+	int dd_w = wz->dropdown_icon_w;
+	int dd_h = wz->dropdown_icon_h;
 	int dd_x = 0;
-	int dd_y = ah - dd_h - 16 - 2;  // leave room for x_icon (16) + 2px gap
+	int dd_y = ah - ci_h - dd_h - 2;
 	for (int y = 0; y < dd_h; y++)
 		for (int x = 0; x < dd_w; x++)
 			atlas[(dd_y + y) * aw + (dd_x + x)] = wz->dropdown_icon_bitmap[y * dd_w + x];
-
 	wz->dropdown_atlas_x = (float)dd_x;
 	wz->dropdown_atlas_y = (float)dd_y;
-
-	// Place X icon below dropdown: (0, ah - 16)
-	int xi_x = 0;
-	int xi_y = ah - 16;
-	for (int y = 0; y < 16; y++)
-		for (int x = 0; x < 16; x++) {
-			// wz_x_icon stores 0x00 or 0xFF as unsigned (RGBA packed).
-			// We just need alpha: nonzero = 255, zero = 0
-			atlas[(xi_y + y) * aw + (xi_x + x)] = wz_x_icon[y * 16 + x] ? 255 : 0;
-		}
-
-	wz->x_icon_atlas_x = (float)xi_x;
-	wz->x_icon_atlas_y = (float)xi_y;
 }
 
 void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h)
@@ -272,6 +333,11 @@ void wz_dl_clear_clip(WzDrawList* dl)
 	dl->_current_clip = (WzRect){ 0 };
 }
 
+void wz_widget_set_clip(WzWidget widget)
+{
+	wz_widget_get(widget)->clips_children = true;
+}
+
 // Low-level quad emitter
 static void wz_dl_add_quad(WzDrawList* dl, float x, float y, float w, float h,
 	float u0, float v0, float u1, float v1, unsigned color)
@@ -316,6 +382,51 @@ void wz_dl_add_rect(WzDrawList* dl, float x, float y, float w, float h, unsigned
 		wz_dl_set_texture(dl, NULL);
 		wz_dl_add_quad(dl, x, y, w, h, 0, 0, 0, 0, color);
 	}
+}
+
+// Horizontal gradient quad: left vertices use left_color, right vertices use right_color — claude 2026-03-25
+static void wz_dl_add_gradient_rect_h(WzDrawList* dl, float x, float y, float w, float h,
+	unsigned left_color, unsigned right_color)
+{
+	if (wz->fonts_count == 0) return;
+	WzFont* font = &wz->fonts[0];
+	wz_dl_set_texture(dl, font->atlas_texture.data);
+	wz_dl_ensure_draw_call(dl, font->atlas_texture.data);
+
+	float u = font->white_uv_u, v = font->white_uv_v;
+
+	float lr = (float)((left_color  >> 24) & 0xFF) / 255.0f;
+	float lg = (float)((left_color  >> 16) & 0xFF) / 255.0f;
+	float lb = (float)((left_color  >>  8) & 0xFF) / 255.0f;
+	float la = (float)( left_color         & 0xFF) / 255.0f;
+
+	float rr = (float)((right_color >> 24) & 0xFF) / 255.0f;
+	float rg = (float)((right_color >> 16) & 0xFF) / 255.0f;
+	float rb = (float)((right_color >>  8) & 0xFF) / 255.0f;
+	float ra = (float)( right_color        & 0xFF) / 255.0f;
+
+	int base = (int)dl->vtx_count;
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y,     lr, lg, lb, la, u, v }; // TL
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y,     rr, rg, rb, ra, u, v }; // TR
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x + w, y + h, rr, rg, rb, ra, u, v }; // BR
+	dl->vertices[dl->vtx_count++] = (WzVertex){ x,     y + h, lr, lg, lb, la, u, v }; // BL
+
+	dl->indices[dl->idx_count++] = base + 0;
+	dl->indices[dl->idx_count++] = base + 1;
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 2;
+	dl->indices[dl->idx_count++] = base + 3;
+	dl->indices[dl->idx_count++] = base + 0;
+
+	dl->draw_calls[dl->draw_call_count - 1].idx_count += 6;
+	dl->draw_calls[dl->draw_call_count - 1].vtx_count += 4;
+}
+
+void wz_widget_set_gradient(WzWidget widget, unsigned int left_color, unsigned int right_color)
+{
+	WzWidgetData* d = wz_widget_get(widget);
+	d->color          = left_color;
+	d->gradient_color = right_color;
 }
 
 void wz_dl_add_textured_quad(WzDrawList* dl, void* texture,
@@ -424,12 +535,14 @@ void wz_widget_set_pad(WzWidget widget, unsigned pad)
 	layout->pad_right = pad;
 
 	data->pad_left = data->pad_right = data->pad_top = data->pad_bottom = pad;
-
 }
 
-void wz_widget_set_margin_left(WzWidget widget, unsigned int pad)
+void wz_widget_set_pad_left(WzWidget widget, unsigned int pad)
 {
-	wz_widget_get(widget)->margin_left = pad;
+	WzWidgetData* data = wz_widget_get(widget);
+	WzChunkLayout* layout = &wz->layouts[data->layout_chunk];
+	wz_assert(data->layout_chunk);
+	layout->pad_left = pad;
 }
 
 void wz_widget_set_margin_right(WzWidget widget, unsigned int pad)
@@ -562,7 +675,7 @@ void wz_widget_set_margins(WzWidget w, unsigned int pad)
 {
 	wz_widget_set_margin_top(w, pad);
 	wz_widget_set_margin_bottom(w, pad);
-	wz_widget_set_margin_left(w, pad);
+	wz_widget_set_pad_left(w, pad);
 	wz_widget_set_margin_right(w, pad);
 }
 
@@ -571,6 +684,16 @@ void wz_widget_set_margins(WzWidget w, unsigned int pad)
 int wz_border_size(const WzWidgetData* d)
 {
 	return d->border_lines * d->border_thickness;
+}
+
+void wz_widget_set_h(WzWidget c, unsigned int h)
+{
+	WzWidgetData* data = wz_widget_get(c);
+	data->min_h = data->constraint_max_w = h;
+
+	// TODO: Handle max size too
+	WzChunk* chunk = &wz->chunks[data->chunk];
+	chunk->min_height[data->slot] = h;
 }
 
 void wz_widget_data_set_border(WzWidgetData* d, WzBorderStyle style)
@@ -867,6 +990,14 @@ bool wz_widget_is_interacting_tree(WzWidget handle)
 	return false;
 }
 
+void wz_widget_fill_cross_axis(WzWidget w)
+{
+	WzWidgetData* widget = wz_widget_get(w);
+	widget->fill_cross_axis = 1;
+	WzChunk* chunk = &wz->chunks[widget->chunk];
+	chunk->fill_cross_axis[widget->slot] = 1;
+}
+
 void wz_widget_add_offset(WzWidget handle, int x, int y)
 {
 	int stack[1024];
@@ -948,10 +1079,28 @@ bool wzrd_handle_is_released_tree(WzWidget handle)
 	return false;
 }
 
+void wz_widget_align(WzWidget widget, unsigned alignment)
+{
+	WzWidgetData* data = wz_widget_get(widget);
+	WzChunkLayout* layout = &wz->layouts[data->layout_chunk];
+	wz_assert(data->layout_chunk);
+
+	layout->alignment = alignment;
+}
+
 void wz_widget_set_child_gap(WzWidget widget, unsigned int child_gap)
 {
 	wz_widget_get(widget)->child_gap = child_gap;
 	wz_widget_get_layout(widget)->child_gap = child_gap;
+}
+
+void wz_widget_set_ignore_children_min(WzWidget c)
+{
+	WzWidgetData* data = wz_widget_get(c);
+
+	// TODO: Handle max size too
+	WzChunk* chunk = &wz->chunks[data->chunk];
+	chunk->ignore_children_min[data->slot] = 1;
 }
 
 
@@ -1042,6 +1191,9 @@ void wz_widget_set_flex(WzWidget widget)
 	WzWidgetData* widg = wz_widget_get(widget);
 	widg->flex_factor = 1;
 	widg->flex_fit = WZ_FLEX_FIT_LOOSE;
+
+	wz->chunks[widg->chunk].flex[widg->slot] = 1;
+
 }
 
 void wz_widget_set_free_from_parent(WzWidget w)
@@ -1077,7 +1229,6 @@ WzWidgetData wz_widget_create(WzWidget parent)
 	box.font_color = WZ_BLACK;
 	box.percentage_h = 0;
 	box.percentage_w = 0;
-	box.cross_axis_alignment = 0;
 	box.best_fit = false;
 	box.bring_to_front = false;
 	box.child_gap = 0;
@@ -1640,49 +1791,51 @@ bool wzrd_handle_is_interacting(WzWidget handle) {
 
 
 
-void wz_input(int* indices, int count)
+void wz_input(WzWidget* indices, int count)
 {
 	WzWidgetData* hovered_box = wz->widgets;
 	unsigned int max_z = 0;
 	wz->hovered_items_list_count = 0;
 	wz->hovered_boxes_count = 0;
 	for (int i = 0; i < count; ++i) {
-		WzWidgetData* box = wz->widgets + indices[i];
+		WzWidgetData* box = wz_widget_get(indices[i]);
+		if (!box) continue;
 
-		if (!wz->occupied[indices[i]])
+		if (!wz->occupied[indices[i].handle])
 		{
 			continue;
 		}
 
 		WzRect scaled_rect = { box->actual_x, box->actual_y, box->actual_w, box->actual_h };
 
-#if 0
-		// Input Clipping: Block mouse from reaching clipped widgets
-		if (wz_handle_is_valid(box->clip_widget))
+		// Input Clipping: clamp rect to nearest clips_children ancestor
 		{
-			WzWidgetData* clip_widget = wz_widget_get(box->clip_widget);
-
-			if (box->actual_x < clip_widget->actual_w)
+			WzWidgetData* p = box;
+			while (p->parent.handle)
 			{
-				y			scaled_rect.x = clip_widget->actual_w;
-			}
-
-			if (box->actual_y < clip_widget->actual_y)
-			{
-				scaled_rect.y = clip_widget->actual_y;
-			}
-
-			if (box->actual_x + box->actual_w > clip_widget->actual_w + clip_widget->actual_w)
-			{
-				scaled_rect.x = clip_widget->actual_w;
-			}
-
-			if (box->actual_y + box->actual_h > clip_widget->actual_y + clip_widget->actual_h)
-			{
-				scaled_rect.y = clip_widget->actual_h;
+				p = &wz->widgets[p->parent.handle];
+				if (p->clips_children)
+				{
+					float cx0 = (float)p->actual_x;
+					float cy0 = (float)p->actual_y;
+					float cx1 = cx0 + (float)p->actual_w;
+					float cy1 = cy0 + (float)p->actual_h;
+					float rx0 = scaled_rect.x;
+					float ry0 = scaled_rect.y;
+					float rx1 = rx0 + scaled_rect.w;
+					float ry1 = ry0 + scaled_rect.h;
+					float ix0 = rx0 > cx0 ? rx0 : cx0;
+					float iy0 = ry0 > cy0 ? ry0 : cy0;
+					float ix1 = rx1 < cx1 ? rx1 : cx1;
+					float iy1 = ry1 < cy1 ? ry1 : cy1;
+					scaled_rect.x = ix0;
+					scaled_rect.y = iy0;
+					scaled_rect.w = ix1 > ix0 ? ix1 - ix0 : 0;
+					scaled_rect.h = iy1 > iy0 ? iy1 - iy0 : 0;
+					break;
+				}
 			}
 		}
-#endif
 
 		bool is_hover = false;
 		{
@@ -2036,9 +2189,9 @@ void wz_widget_set_layout(WzWidget handle, unsigned int layout_type)
 		.parent_chunk = d->chunk,
 		.parent_slot = d->slot,
 		.chunk = chunk_idx,
-		.child_gap = 5,
+		//.child_gap = 5,
 		.layout_type = layout_type,
-		.pad_bottom = 5, .pad_left = 5, .pad_top = 5, .pad_right = 5
+		//.pad_bottom = 5, .pad_left = 5, .pad_top = 5, .pad_right = 5
 	};
 
 	wz->layouts[layout_idx] = layout;
@@ -2120,11 +2273,39 @@ void wz_draw(WzWidget* boxes_indices)
 			continue;
 		}
 
+		// Walk parent chain to find nearest ancestor with clips_children
+		{
+			WzWidgetData* p = widget;
+			WzWidgetData* clipper = NULL;
+			while (p->parent.handle)
+			{
+				p = &wz->widgets[p->parent.handle];
+				if (p->clips_children) { clipper = p; break; }
+			}
+			if (clipper)
+			{
+				WzRect r = { (float)clipper->actual_x, (float)clipper->actual_y,
+				             (float)clipper->actual_w, (float)clipper->actual_h };
+				wz_dl_set_clip(dl, r);
+			}
+			else
+			{
+				wz_dl_clear_clip(dl);
+			}
+		}
+
 		// Draw Widget background
 		if (wz->focused_widget_unique_id && widget->unique_id == wz->focused_widget_unique_id)
 		{
 			wz_dl_add_rect(dl, widget->actual_x, widget->actual_y,
 				widget->actual_w, widget->actual_h, WZ_RED);
+		}
+		else if (widget->gradient_color) // horizontal gradient — claude 2026-03-25
+		{
+			wz_dl_add_gradient_rect_h(dl,
+				widget->actual_x, widget->actual_y,
+				widget->actual_w, widget->actual_h,
+				widget->color, widget->gradient_color);
 		}
 		else
 		{
@@ -2223,6 +2404,25 @@ void wz_draw(WzWidget* boxes_indices)
 				wz_dl_add_rect(dl,left0.x, left0.y, left0.w, left0.h, EGUI_GRAY);
 				wz_dl_add_rect(dl,left1.x, left1.y, left1.w, left1.h, EGUI_WHITE2);
 			}
+			else if (widget->border_style == WZ_BORDER_RESIZE_GRIP) {
+				// 6 raised dots in a triangular pattern along the bottom-right diagonal
+				// classic Win32-style resize grip
+				float gx = (float)widget->actual_x;
+				float gy = (float)widget->actual_y;
+				float gw = (float)widget->actual_w;
+				float gh = (float)widget->actual_h;
+				static const int dots[6][2] = {
+					{  3,  3 },
+					{  7,  3 }, {  3,  7 },
+					{ 11,  3 }, {  7,  7 }, {  3, 11 },
+				};
+				for (int d = 0; d < 6; d++) {
+					float bx = gx + gw - (float)dots[d][0];
+					float by = gy + gh - (float)dots[d][1];
+					wz_dl_add_rect(dl, bx - 1.0f, by - 1.0f, 2.0f, 2.0f, EGUI_WHITE2);
+					wz_dl_add_rect(dl, bx,         by,         2.0f, 2.0f, WZ_DARKGRAY);
+				}
+			}
 		}
 
 		// Draw content
@@ -2309,6 +2509,41 @@ void wz_draw(WzWidget* boxes_indices)
 					wz->dropdown_atlas_x, wz->dropdown_atlas_y, icon_w, icon_h,
 					(float)font->atlas_w, (float)font->atlas_h,
 					widget->font_color);
+			}
+
+			// X icon: pixel-art 2x2 rect dots along both diagonals — claude 2026-03-25
+			// (atlas-based AA method kept in wz_create_close_icon / wz_pack_icons_into_atlas for reference)
+			if (item.type == ItemType_CloseIcon)
+			{
+				float wx = (float)widget->actual_x;
+				float wy = (float)widget->actual_y;
+				float ww = (float)widget->actual_w;
+				float wh = (float)widget->actual_h;
+				float margin = 3.0f;
+				int   steps  = (int)(ww < wh ? ww : wh) - (int)(margin * 2);
+				unsigned col = widget->font_color;
+				for (int i = 0; i < steps; i++)
+				{
+					// \ diagonal — 1x1 pixel staircase — claude 2026-03-25
+					wz_dl_add_rect(dl, wx + margin + i,               wy + margin + i, 1.0f, 1.0f, col);
+					// / diagonal
+					wz_dl_add_rect(dl, wx + ww - margin - 1.0f - i,  wy + margin + i, 1.0f, 1.0f, col);
+				}
+			}
+
+			// Scroll thumb grip: 3 horizontal grooves centered vertically — claude 2026-03-25
+			if (item.type == ItemType_ScrollGrip && widget->actual_h > 14)
+			{
+				float cx  = (float)widget->actual_x + (float)widget->actual_w * 0.5f;
+				float cy  = (float)widget->actual_y + (float)widget->actual_h * 0.5f;
+				float lw  = (float)widget->actual_w - 6.0f; // 3px margin each side
+				float lx  = cx - lw * 0.5f;
+				for (int k = -1; k <= 1; k++)
+				{
+					float ly = cy + k * 3.0f;
+					wz_dl_add_rect(dl, lx, ly,        lw, 1.0f, 0x808080FF); // shadow
+					wz_dl_add_rect(dl, lx, ly + 1.0f, lw, 1.0f, 0xFFFFFFFF); // highlight
+				}
 			}
 
 			// Rect item
@@ -2491,104 +2726,155 @@ void wz_widget_resize(WzWidget handle, int* w_offset, int* h_offset)
 
 #define SCROLLBAR_SIZE 20
 
-WzWidget wz_scroll_box(wzrd_v2 size, unsigned int* scroll, WzWidget parent, const void* tag)
+WzWidget wz_scroll_box(wzrd_v2 size, unsigned int* scroll, WzScrollPhysics* physics, WzWidget parent, const void* tag)
 {
 	WzWidget panel = wz_hbox(parent);
 	wz_widget_set_size(panel, size.x, size.y);
 	wz_widget_set_color_old(panel, EGUI_BEIGE);
-	wz_widget_set_main_axis_size_min(panel);
-	wz_widget_set_cross_axis_alignment(panel, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+	wz_widget_set_flex(panel);
+	wz_widget_fill_cross_axis(panel);
+	wz_widget_set_ignore_children_min(panel);
 
-	WzWidget clip_panel = wz_widget(panel);
-	wz_widget_clip(clip_panel);
-	wz_widget_set_flex(clip_panel);
+	unsigned w, h;
+	wz_widget_get_cached_size(panel, &w, &h);
 
-	WzWidget user_panel = wz_vbox(clip_panel);
-	wz_widget_set_color(user_panel, 0x00ffffff);
-	wz_widget_add_tag(user_panel, tag);
+	WzWidget user_panel = wz_vbox(panel);
+	//wz_widget_set_color(user_panel, WZ_GREEN);
+	wz_widget_set_clip(user_panel);
+	wz_widget_fill_cross_axis(user_panel);
 	wz_widget_set_flex(user_panel);
-	wz_widget_set_cross_axis_alignment(user_panel, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+	wz_widget_set_layout(user_panel, WZ_LAYOUT_NONE);
 
-	WzWidget c = wz_widget(user_panel);
-	wz_widget_set_max_h(c, 150);
-	wz_widget_set_color(c, 0x0000ffff);
+	WzWidget content = wz_vbox(user_panel);
+	wz_widget_fill_cross_axis(content);
 
+#if 1
+
+	// TODO: this panel is peaking
 	WzWidget scrollbar_panel = wz_vbox(panel);
-	wz_widget_set_max_w(scrollbar_panel, SCROLLBAR_SIZE + 4);
-	wz_widget_set_color(scrollbar_panel, 0xFF00FFFF);
-	wz_widget_set_cross_axis_alignment(scrollbar_panel, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+	wz_widget_set_w(scrollbar_panel, SCROLLBAR_SIZE);
+	wz_widget_set_color(scrollbar_panel, WZ_BLUE);
+	wz_widget_fill_cross_axis(scrollbar_panel);
 
 	WzWidget top_button = wz_widget(scrollbar_panel);
 	wz_widget_set_size(top_button, SCROLLBAR_SIZE, SCROLLBAR_SIZE);
 	wz_widget_set_border(top_button, WZ_BORDER_RAISED);
-
+	
 	WzWidget middle_panel = wz_widget(scrollbar_panel);
-	wz_widget_get(middle_panel)->color = EGUI_GRAY;
-	wz_widget_get(middle_panel)->tag = tag;
-	wz_widget_get(middle_panel)->secondary_tag = "scrollbar_middle";
 	wz_widget_set_flex(middle_panel);
-	wz_widget_set_border(middle_panel, WZ_BORDER_RAISED);
+	wz_widget_set_w(middle_panel, SCROLLBAR_SIZE);
+	wz_widget_set_layout(middle_panel, WZ_LAYOUT_NONE);
 
 	WzWidget bottom_button = wz_widget(scrollbar_panel);
 	wz_widget_set_size(bottom_button, SCROLLBAR_SIZE, SCROLLBAR_SIZE);
 	wz_widget_set_border(bottom_button, WZ_BORDER_RAISED);
+	
+	// handle scrollbar
+	{
+		WzWidget scrollbar = wz_widget(middle_panel);
+		wz_widget_set_border(scrollbar, WZ_BORDER_RAISED);
+		// Grip lines drawn in the item loop — claude 2026-03-25
+		WzWidgetItem grip_item = { 0 };
+		grip_item.type = ItemType_ScrollGrip;
+		wz_widget_add_item(scrollbar, grip_item);
 
-	WzScrollbar* wz_scrollbar = &wz->scrollbars[wz->scrollbars_count];
-	wz_scrollbar->content = user_panel;
-	wz_scrollbar->scrollbar = middle_panel;
-	wz_scrollbar->panel = panel;
-	wz_scrollbar->top_button = top_button;
-	wz_scrollbar->bottom_button = bottom_button;
-	wz_scrollbar->scroll = scroll;
-	wz->scrollbars_count++;
+		unsigned user_panel_w, user_panel_h;
+		wz_widget_get_cached_size(user_panel, &user_panel_w, &user_panel_h);
+
+		unsigned content_w, content_h;
+		wz_widget_get_cached_size(content, &content_w, &content_h);
+		float ratio = content_h > 0 ? user_panel_h / (float)content_h : 0;
+
+		unsigned middle_panel_w, middle_panel_h;
+		wz_widget_get_cached_size(middle_panel, &middle_panel_w, &middle_panel_h);
+
+		unsigned scrollbar_h = ratio * middle_panel_h;
+		scrollbar_h = scrollbar_h > 20 ? scrollbar_h : 20;
+		scrollbar_h = scrollbar_h < middle_panel_h ? scrollbar_h : middle_panel_h;
+
+		wz_widget_set_size(scrollbar, SCROLLBAR_SIZE, scrollbar_h);
 
 #if 0
-
-	//#if 0
-	WzWidgetData b = wzrd_widget_get_cached_box(tag);
-	WzWidget scrollbar = (WzWidget){ 0 };
-	//if (wz_handle_is_valid(b.handle))
-	{
-		//WzWidgetData* box = &b;
-	/*	float ratio = (float)b.actual_h / (float)b.content_h;
-		if (ratio > 1)
-			ratio = 1;*/
-
-			//scrollbar = wz_hbox(middle_panel);
-			//wz_widget_get(scrollbar)->percentage_h = ratio;
-		wz_widget_get(scrollbar)->y = *scroll;
-
-		//wz_widget_get(scrollbar)->tag = tag;
-		//wz_widget_get(scrollbar)->secondary_tag = "scrollbar";
-	}
-
-	WzWidgetData scrollbar_middle_box = wzrd_widget_get_cached_box_with_secondary_tag(tag, "scrollbar_middle");
-	WzWidgetData scrollbar_box = wzrd_widget_get_cached_box_with_secondary_tag(tag, "scrollbar");
-
-	if (wzrd_widget_is_active(top_button))
-	{
-		if (*scroll > 0)
-			*scroll -= 1;
-	}
-
-	if (wzrd_widget_is_active(bottom_button))
-	{
-		if (*scroll + scrollbar_box.actual_h < scrollbar_middle_box.actual_h - 2)
-			*scroll += 1;
-	}
-
-	if (wzrd_widget_is_active(scrollbar))
-	{
-		int scroll_temp = *scroll + wzrd_canvas_get()->mouse_delta.y;
-
-		if (scroll_temp + scrollbar_box.actual_h < scrollbar_middle_box.actual_h - 2 && scroll_temp > 0)
+		if (content_panel_h < 2 * SCROLLBAR_SIZE)
 		{
-			*scroll = scroll_temp;
+			continue;
 		}
-	}
+
+		if (ratio > 1)
+		{
+			ratio = 1;
+		}
 #endif
 
-	return user_panel;
+		if (wz_widget_is_interacting(top_button))
+		{
+#if 0
+			if (scrollbar_data->actual_y + *scrollbar.scroll + scrollbar_data->actual_h <
+				content_panel->actual_y + content_panel->actual_h - SCROLLBAR_SIZE - 1)
+			{
+				*scrollbar.scroll += 1;
+			}
+#else
+			if (*scroll > 0)
+			{
+				*scroll -= 1;
+			}
+#endif
+		}
+		else if (wz_widget_is_interacting(bottom_button))
+		{
+			if (*scroll < middle_panel_h - scrollbar_h)
+			{
+				*scroll += 1;
+			}
+		}
+		else if (wz_widget_is_interacting(scrollbar))
+		{
+			static int grab_offset = 0;
+			if (wz_widget_is_activating(scrollbar))
+				grab_offset = (int)wz->mouse_pos.y - (int)wz->cached_rects[middle_panel.handle].y - (int)*scroll;
+			int new_scroll = (int)wz->mouse_pos.y - (int)wz->cached_rects[middle_panel.handle].y - grab_offset;
+			new_scroll = new_scroll < 0 ? 0 : new_scroll;
+			new_scroll = new_scroll > (int)(middle_panel_h - scrollbar_h) ? (int)(middle_panel_h - scrollbar_h) : new_scroll;
+			*scroll = (unsigned)new_scroll;
+		}
+		
+		// Spring-damper physics (mass = 1, stiffness = 300, damping = 35 ~= critical)
+		// F = -k*(pos - target) - d*vel  =>  a = F  =>  integrate
+		// WARNING: Code was generated by Claude, it uses a static variable, go through the code again and remove it
+		{
+			const float dt       = 1.0f / 60.0f;
+			const float stiff    = 300.0f;
+			const float damping  = 35.0f;
+			float target = (float)*scroll;
+			float force = -stiff * (physics->position - target) - damping * physics->velocity;
+			physics->velocity += force * dt;
+			physics->position += physics->velocity * dt;
+			// Snap to target when close enough to avoid micro-oscillations
+			if (fabsf(physics->position - target) < 0.5f && fabsf(physics->velocity) < 0.5f)
+			{
+				physics->position = target;
+				physics->velocity = 0.f;
+			}
+			// Clamp to valid range so it never escapes the track
+			float max_pos = (float)(middle_panel_h - scrollbar_h);
+			if (physics->position < 0.f)        { physics->position = 0.f;       physics->velocity = 0.f; }
+			if (physics->position > max_pos)    { physics->position = max_pos;   physics->velocity = 0.f; }
+		}
+
+		wz_widget_set_y(scrollbar, (int)physics->position);
+
+		float scrollbar_ratio = (middle_panel_h - scrollbar_h) > 0
+			? physics->position / (float)(middle_panel_h - scrollbar_h)
+			: 0.f;
+		int content_y = -(int)(scrollbar_ratio * (content_h - 100));
+
+		wz_widget_set_y(content, content_y);
+	}
+#endif
+	//WzWidget content = { 0 };
+
+	return content;
 }
 
 void wz_handle_input()
@@ -2596,7 +2882,7 @@ void wz_handle_input()
 	// Mouse interaction
 	if (wz->enable_input)
 	{
-		wz_input((int*)wz->boxes_indices, MAX_NUM_WIDGETS);
+		wz_input(wz->boxes_indices, wz->boxes_indices_count); // claude 2026-03-25: was (int*) cast with wrong count, skipping widgets beyond first 32
 		wzrd_handle_cursor();
 		wzrd_handle_border_resize();
 	}
@@ -2744,10 +3030,7 @@ void wz_widget_add_content_margins(WzWidget widget, unsigned left, unsigned righ
 	d->constraint_max_w += left + right;
 }
 
-void wz_widget_set_cross_axis_alignment(WzWidget widget, unsigned int cross_axis_alignment)
-{
-	wz_widget_get(widget)->cross_axis_alignment = cross_axis_alignment;
-}
+
 
 void wz_widget_set_main_axis_alignment(WzWidget widget, unsigned int main_axis_alignment)
 {
@@ -2795,7 +3078,7 @@ WzWidget wz_tree_add_row_raw(WzTree* tree, WzStr str, WzTexture texture, unsigne
 	WzWidget row = wz_hbox(tree->menu);
 	wz_widget_set_user_id(row, (unsigned)(uintptr_t)node);
 	wz_widget_add_source(row, file, line);
-	wz_widget_set_cross_axis_alignment(row, WZ_CROSS_AXIS_ALIGNMENT_CENTER);
+	wz_widget_fill_cross_axis(row);
 	wz_widget_set_margins(row, 5);
 
 	WzWidget box = wz_widget(row);
@@ -3372,184 +3655,6 @@ void wz_tree_node_get_children(WzTree* tree, WzTreeNode node, WzTreeNode** child
 	*children_count = tree->children_count;
 }
 
-#if 0
-
-void wz_do_layout_refactor_me(int from, int to)
-{
-	static struct WzChunk chunks[MAX_NUM_WIDGETS];
-	static struct WzSlot  slots[MAX_NUM_WIDGETS];
-	static int widget_to_chunk[MAX_NUM_WIDGETS];
-	static int chunk_parent_chunk[MAX_NUM_WIDGETS];
-	static int chunk_parent_lane[MAX_NUM_WIDGETS];
-	static int widget_parent_chunk[MAX_NUM_WIDGETS];
-	static int widget_lane[MAX_NUM_WIDGETS];
-	static int overflow_prev[MAX_NUM_WIDGETS];
-
-	memset(chunks, 0, sizeof(chunks));
-	memset(slots, 0, sizeof(slots));
-
-	for (int i = 0; i < MAX_NUM_WIDGETS; ++i)
-	{
-		widget_to_chunk[i] = -1;
-		overflow_prev[i] = -1;
-	}
-
-	int stack[MAX_NUM_WIDGETS];
-	int stack_head = 0, stack_tail = 0;
-	int num_chunks = 0;
-
-	widget_to_chunk[from] = 0;
-	chunk_parent_chunk[0] = 0;
-	chunk_parent_lane[0] = 0;
-	slots[0].avail_width[0] = wz->window.w;
-	slots[0].avail_height[0] = wz->window.h;
-	num_chunks = 1;
-	stack[stack_tail++] = from;
-
-	while (stack_head < stack_tail)
-	{
-		unsigned widget = stack[stack_head++];
-		WzWidgetData* widget_data = &wz->widgets[widget];
-		int k = widget_to_chunk[widget];
-		int head_k = k;
-
-		chunks[k].pad_left = (float)widget_data->pad_left;
-		chunks[k].pad_right = (float)widget_data->pad_right;
-		chunks[k].pad_top = (float)widget_data->pad_top;
-		chunks[k].pad_bottom = (float)widget_data->pad_bottom;
-		chunks[k].child_gap = (float)widget_data->child_gap;
-		chunks[k].is_horizontal = widget_data->is_horizontal;
-		chunks[k].cursor_x = (float)widget_data->pad_left;
-		chunks[k].cursor_y = (float)widget_data->pad_top;
-		chunks[k].parent_chunk = chunk_parent_chunk[k];
-		chunks[k].parent_slot = chunk_parent_lane[k];
-		chunks[k].shrink_width = widget_data->fit_w;
-		chunks[k].shrink_height = widget_data->fit_h;
-
-		int lane = 0;
-		int non_free_count = 0;
-		float total_min_w = 0.f, total_min_h = 0.f;
-
-		for (int ci = 0; ci < widget_data->children_count; ++ci)
-		{
-			int chandle = widget_data->children[ci].handle;
-			WzWidgetData* child = &wz->widgets[chandle];
-			if (child->free_from_parent) continue;
-
-			total_min_w += (float)(child->min_w + child->margin_left + child->margin_right);
-			total_min_h += (float)(child->min_h + child->margin_top + child->margin_bottom);
-			++non_free_count;
-
-			if (lane == 8)
-			{
-				int prev_k = k;
-				k = num_chunks++;
-				overflow_prev[k] = prev_k;
-				chunks[k].is_continuation = 1;
-				chunks[k].overflow_group_head = head_k;
-				chunks[k].parent_chunk = chunk_parent_chunk[head_k];
-				chunks[k].parent_slot = chunk_parent_lane[head_k];
-				chunks[k].child_gap = chunks[head_k].child_gap;
-				chunks[k].is_horizontal = chunks[head_k].is_horizontal;
-				chunks[k].cursor_x = 0;
-				chunks[k].cursor_y = 0;
-				lane = 0;
-			}
-
-			slots[k].min_width[lane] = (float)child->min_w;
-			slots[k].min_height[lane] = (float)child->min_h;
-			slots[k].max_width[lane] = child->constraint_max_w ? (float)child->constraint_max_w : 1e9f;
-			slots[k].max_height[lane] = child->constraint_max_h ? (float)child->constraint_max_h : 1e9f;
-			slots[k].flex[lane] = (float)child->flex_factor;
-			slots[k].margin_left[lane] = (float)child->margin_left;
-			slots[k].margin_right[lane] = (float)child->margin_right;
-			slots[k].margin_top[lane] = (float)child->margin_top;
-			slots[k].margin_bottom[lane] = (float)child->margin_bottom;
-			slots[k].cross_align[lane] = (float)child->cross_axis_alignment;
-
-			widget_parent_chunk[chandle] = k;
-			widget_lane[chandle] = lane;
-
-			//if (child->layout_type!= 0)g
-			{
-				int k_child = num_chunks++;
-				widget_to_chunk[chandle] = k_child;
-				chunk_parent_chunk[k_child] = k;
-				chunk_parent_lane[k_child] = lane;
-				stack[stack_tail++] = chandle;
-			}
-			++lane;
-		}
-		chunks[k].child_count = lane;
-
-		if (k != head_k)
-		{
-			chunks[head_k].total_child_count = non_free_count;
-			chunks[head_k].total_children_min_width = total_min_w;
-			chunks[head_k].total_children_min_height = total_min_h;
-		}
-	}
-
-	wz_layout_chunks_c(chunks, slots, num_chunks);
-
-	// Apply position corrections for overflow continuation chunks.
-	// Each continuation chunk's abs_x/abs_y was computed with cursor starting at 0;
-	// add the cumulative cursor advance from all preceding chunks in the same group.
-	float correction_x[MAX_NUM_WIDGETS];
-	float correction_y[MAX_NUM_WIDGETS];
-	memset(correction_x, 0, num_chunks * sizeof(float));
-	memset(correction_y, 0, num_chunks * sizeof(float));
-	for (int i = 0; i < num_chunks; ++i)
-	{
-		int prev = overflow_prev[i];
-		if (prev < 0) continue;
-		correction_x[i] = correction_x[prev] + chunks[prev].cursor_x;
-		correction_y[i] = correction_y[prev] + chunks[prev].cursor_y;
-		int horiz = chunks[i].is_horizontal;
-		for (int j = 0; j < (int)chunks[i].child_count; ++j)
-		{
-			if (horiz) slots[i].abs_x[j] += correction_x[i];
-			else       slots[i].abs_y[j] += correction_y[i];
-		}
-	}
-
-	// Apply actual sizes
-	// Iterate all slots; widget_to_chunk[i] != -1 means this widget was visited
-	// by the BFS in this call. Widget handles are not guaranteed to fall in
-	// [from, to], so we cannot restrict by index here.
-	for (int i = 1; i < MAX_NUM_WIDGETS; ++i)
-	{
-		if (!wz->occupied[i]) continue;
-
-		WzWidgetData* widget = &wz->widgets[i];
-
-		if (widget->free_from_parent)
-		{
-			widget->actual_x = widget->x;
-			widget->actual_y = widget->y;
-			widget->actual_w = widget->min_w;
-			widget->actual_h = widget->min_h;
-			continue;
-		}
-
-		if (widget_to_chunk[i] == -1) continue;
-
-		int parent_chunk = widget_parent_chunk[i];
-		int lane = widget_lane[i];
-
-		widget->actual_x = (int)slots[parent_chunk].abs_x[lane];
-		widget->actual_y = (int)slots[parent_chunk].abs_y[lane];
-		widget->actual_w = (unsigned)slots[parent_chunk].abs_width[lane];
-		widget->actual_h = (unsigned)slots[parent_chunk].abs_height[lane];
-
-		// Not sure it should be here
-		widget->actual_x += widget->x;
-		widget->actual_y += widget->y;
-
-	}
-}
-#endif
-
 bool wz_widget_is_focused(WzWidget widget)
 {
 	bool result = false;
@@ -3562,17 +3667,6 @@ bool wz_widget_is_focused(WzWidget widget)
 	return result;
 }
 
-void wz_widget_set_width(WzWidget widget, unsigned w)
-{
-	WzWidgetData* data = wz_widget_get(widget);
-	data->min_w = data->constraint_max_w = w;
-}
-
-void wz_widget_set_height(WzWidget widget, unsigned h)
-{
-	WzWidgetData* data = wz_widget_get(widget);
-	data->min_h = data->constraint_max_h = h;
-}
 
 WzWidget wz_sized_box(WzWidget parent, unsigned w, unsigned h)
 {
@@ -3581,7 +3675,6 @@ WzWidget wz_sized_box(WzWidget parent, unsigned w, unsigned h)
 
 	return result;
 }
-
 
 WzStr wz_str_create(const char* str)
 {
@@ -3595,6 +3688,8 @@ WzStr wz_str_create(const char* str)
 	return result;
 }
 
+
+
 void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
 	WzWidget* panels, unsigned* current_tab, unsigned user_id)
 {
@@ -3605,7 +3700,7 @@ void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
 
 	WzWidget tabs_panel = wz_hbox(big_panel);
 	wz_widget_set_user_id(tabs_panel, 1);
-	wz_widget_set_cross_axis_alignment(tabs_panel, WZ_CROSS_AXIS_ALIGNMENT_END);
+	wz_widget_align(tabs_panel, WZ_ALIGNMENT_END);
 	wz_widget_set_main_axis_size_min(tabs_panel);
 
 	WzWidget panel = wz_vbox(big_panel);
@@ -3621,7 +3716,7 @@ void wz_tabs(WzWidget parent, WzStr* tab_names, unsigned tabs_count,
 	{
 		bool b = false;
 		WzWidget tab = wz_command_button(tabs_panel, tab_names[i], &b, i + 1);
-		wz_widget_set_width(tab, 30);
+		wz_widget_set_w(tab, 30);
 		wz_widget_set_border(tab, WZ_BORDER_TAB);
 		tabs[i] = tab;
 
@@ -3660,7 +3755,7 @@ void wz_layout()
 {
 	// Bottom sizing up pass
 	// TODO: The algorithm fails when traversing ALL widgets since they will write 0 to (0, 0)
-	for (int i = wz->layouts_count - 1; i >= 0; --i)
+	for (int i = MAX_NUM_WIDGETS - 1; i >= 0; --i)
 	{
 		WzChunkLayout* layout = &wz->layouts[i];
 
@@ -3687,7 +3782,7 @@ void wz_layout()
 		layout->flex_total = flex_total;
 		
 		// TODO: Remove branch
-		if (i > 0 && !(layout->layout_type & WZ_LAYOUT_NONE))
+		if (i > 0 && !(layout->layout_type & WZ_LAYOUT_NONE) && layout->layout_type)
 		{
 			unsigned new_min_width = (layout->layout_type & WZ_LAYOUT_HORIZONTAL) ?
 				layout->total_children_min_width +
@@ -3701,43 +3796,73 @@ void wz_layout()
 				layout->pad_top + layout->pad_bottom +
 				layout->border_size * 2:
 				max_min_height + layout->pad_top + layout->pad_bottom + layout->border_size * 2;
-			
+
 			wz->chunks[layout->parent_chunk].min_width[layout->parent_slot] =
-				new_min_width > wz->chunks[layout->parent_chunk].min_width[layout->parent_slot] ?
+				new_min_width > wz->chunks[layout->parent_chunk].min_width[layout->parent_slot]
+				&&
+				wz->chunks[layout->parent_chunk].ignore_children_min[layout->parent_slot] == 0
+				?
 				new_min_width :
 				wz->chunks[layout->parent_chunk].min_width[layout->parent_slot];
 			wz->chunks[layout->parent_chunk].min_height[layout->parent_slot] =
-				new_min_height > wz->chunks[layout->parent_chunk].min_height[layout->parent_slot] ?
+				new_min_height > wz->chunks[layout->parent_chunk].min_height[layout->parent_slot]
+				&&
+				wz->chunks[layout->parent_chunk].ignore_children_min[layout->parent_slot] == 0
+				?
 				new_min_height :
 				wz->chunks[layout->parent_chunk].min_height[layout->parent_slot];
 		}
 	}
 
 	// Top down phase
-	for (int i = 0; i < wz->layouts_count; ++i)
+	for (int i = 0; i < MAX_NUM_WIDGETS; ++i)
 	{
 		WzChunkLayout* layout = &wz->layouts[i];
+		
+		if (i > 0)
+		{
+			layout->available_width = (int16_t)wz->chunks[layout->parent_chunk].absolute_w[layout->parent_slot];
+			layout->available_height = (int16_t)wz->chunks[layout->parent_chunk].absolute_h[layout->parent_slot];
+		}
 
 		for (unsigned k = 0; k <= layout->chunk_stride; ++k)
 		{
 			WzChunk* chunk = &wz->chunks[layout->chunk + k];
 
-			uint32_t children_width = 0, children_height = 0;
-
 			for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
 			{
-				children_width += chunk->min_width[j] & (layout->layout_type & WZ_LAYOUT_HORIZONTAL);
-				children_height += chunk->min_height[j] & (layout->layout_type & WZ_LAYOUT_VERTICAL);
+				unsigned w  = layout->layout_type == WZ_LAYOUT_VERTICAL && chunk->fill_cross_axis[j] ?
+					wz->chunks[layout->parent_chunk].absolute_w[layout->parent_slot] - (layout->pad_left + layout->pad_right + layout->border_size * 2) :
+					chunk->min_width[j];
+				unsigned h = layout->layout_type == WZ_LAYOUT_HORIZONTAL && chunk->fill_cross_axis[j] ?
+					wz->chunks[layout->parent_chunk].absolute_h[layout->parent_slot] - (layout->pad_top + layout->pad_bottom + layout->border_size * 2):
+					chunk->min_height[j];
+
+				chunk->absolute_w[j] = w;
+				chunk->absolute_h[j] = h;
+
+				layout->children_w += w;
+				layout->children_h += h;
 			}
 
-			layout->available_width -= children_width;
-			layout->available_height -= children_height;
+			layout->available_width -= layout->children_w;
+			layout->available_height -= layout->children_h;
 		}
 
+		// should I?
+		layout->children_w += +layout->child_gap * (layout->child_count - 1);
+		layout->children_h += +layout->child_gap * (layout->child_count - 1);
+
+		// Is this the best place to put it?
+		layout->available_width -= layout->pad_left + layout->pad_right + layout->border_size * 2;
+		layout->available_height -= layout->pad_top + layout->pad_bottom + layout->border_size * 2;
+
 		// TODO: Handle there is no availble space for min widgets
-		uint16_t flex_w = layout->flex_total && layout->available_width > 0 && (layout->layout_type & WZ_LAYOUT_HORIZONTAL) ?
+		uint16_t flex_w = layout->flex_total && layout->available_width > 0 &&
+			(layout->layout_type & WZ_LAYOUT_HORIZONTAL) ?
 			layout->available_width / layout->flex_total : 0;
-		uint16_t flex_h = layout->flex_total && layout->available_height > 0 && (layout->layout_type & WZ_LAYOUT_VERTICAL) ?
+		uint16_t flex_h = layout->flex_total && layout->available_height > 0 &&
+			(layout->layout_type & WZ_LAYOUT_VERTICAL) ?
 			layout->available_height / layout->flex_total : 0;
 
 		// TODO: This loop can be merged with the one above it 
@@ -3747,14 +3872,14 @@ void wz_layout()
 
 			for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
 			{
-				chunk->absolute_w[j] += flex_w;
-				chunk->absolute_h[j] += flex_h;
+				chunk->absolute_w[j] += flex_w * chunk->flex[j];
+				chunk->absolute_h[j] += flex_h * chunk->flex[j];
 			}
 		}
 	}
 
-	// Layouting 
-	for (unsigned i = 0; i < wz->layouts_count; ++i)
+	// Layouting
+	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
 	{
 		WzChunkLayout* layout = &wz->layouts[i];
 		unsigned parent_x = wz->chunks[layout->parent_chunk].absolute_x[layout->parent_slot];
@@ -3768,14 +3893,25 @@ void wz_layout()
 
 			for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
 			{
-				chunk->absolute_x[j] = (layout->layout_type & WZ_LAYOUT_NONE) ? parent_x + chunk->relative_x[j] : cursor_x;
-				chunk->absolute_y[j] = (layout->layout_type & WZ_LAYOUT_NONE) ? parent_y + chunk->relative_y[j] : cursor_y;
+				chunk->absolute_x[j] = (layout->layout_type & WZ_LAYOUT_NONE) ?
+					parent_x + chunk->relative_x[j] : cursor_x;
+				chunk->absolute_y[j] = (layout->layout_type & WZ_LAYOUT_NONE) ?
+					parent_y + chunk->relative_y[j] : cursor_y;
 
-				chunk->absolute_w[j] = chunk->min_width[j];
-				chunk->absolute_h[j] = chunk->min_height[j];
+				// Cross axis alignment
+				chunk->absolute_x[j] += layout->alignment == WZ_ALIGNMENT_CENTER &&
+					(bool)(layout->layout_type & WZ_LAYOUT_VERTICAL) ?
+					(wz->chunks[layout->parent_chunk].absolute_w[layout->parent_slot] - chunk->absolute_w[j]) / 2 :
+					0;
+				chunk->absolute_y[j] += layout->alignment == WZ_ALIGNMENT_CENTER &&
+					(bool)(layout->layout_type & WZ_LAYOUT_HORIZONTAL) ?
+					(wz->chunks[layout->parent_chunk].absolute_h[layout->parent_slot] - chunk->absolute_h[j]) / 2 :
+					0;
 
-				cursor_x += (bool)(layout->layout_type & WZ_LAYOUT_HORIZONTAL) * (chunk->absolute_w[j] + layout->child_gap);
-				cursor_y += (bool)(layout->layout_type & WZ_LAYOUT_VERTICAL) * (chunk->absolute_h[j] + layout->child_gap);
+				cursor_x += (bool)(layout->layout_type & WZ_LAYOUT_HORIZONTAL) *
+					(chunk->absolute_w[j] + layout->child_gap);
+				cursor_y += (bool)(layout->layout_type & WZ_LAYOUT_VERTICAL) *
+					(chunk->absolute_h[j] + layout->child_gap);
 			}
 		}
 	}
@@ -3784,7 +3920,7 @@ void wz_layout()
 	for (unsigned i = 0; i < wz->chunks_count; ++i)
 	{
 		WzChunk* chunk = &wz->chunks[i];
-
+		
 		for (unsigned j = 0; j < WZ_CHUNK_SIZE; ++j)
 		{
 			WzWidgetData* widget = &wz->widgets[chunk->widget_index[j]];
@@ -3797,7 +3933,6 @@ void wz_layout()
 
 		}
 	}
-
 }
 
 void wz_command_button_run(WzWidget button, bool* released)
@@ -3849,7 +3984,6 @@ void wz_end()
 	//wz_inherit(wz->widgets[1].handle);
 
 	// First layout
-	wz_layout();
 	//wz_do_layout_refactor_me(1, wz->widgets_count);
 
 	// Check all ids are unique
@@ -3868,50 +4002,18 @@ void wz_end()
 		}
 	}
 
-	// Second pass: handle scrollbars
-	for (int i = 0; i < wz->scrollbars_count; ++i)
+
+
+	// Layout
+	wz_layout();
+
+	// Cache rects
+	for (unsigned i = 0; i < MAX_NUM_WIDGETS; ++i)
 	{
-		WzScrollbar scrollbar = wz->scrollbars[i];
-		WzWidgetData* content_panel = wz_widget_get(scrollbar.content);
-		unsigned int content_panel_h = content_panel->actual_h;
-		unsigned int content_h = 0;
-
-		for (int i = 0; i < content_panel->children_count; ++i)
-		{
-			content_h += wz->widgets[content_panel->children[i].handle].actual_h;
-		}
-
-		if (!content_h)
-		{
-			continue;
-		}
-
-		wz_assert(content_panel_h);
-		if (content_panel_h < 2 * SCROLLBAR_SIZE)
-		{
-			continue;
-		}
-
-		float ratio = (float)content_panel_h / (float)content_h;
-		if (ratio > 1)
-		{
-			ratio = 1;
-		}
-		unsigned int scrollbar_h = (unsigned int)(ratio * (float)(content_panel_h - 2 * SCROLLBAR_SIZE));
-		WzWidgetData* scrollbar_data = wz_widget_get(wz->scrollbars[i].scrollbar);
-		scrollbar_data->actual_h = scrollbar_h;
-
-		if (wz_widget_is_active(scrollbar.top_button))
-		{
-			if (scrollbar_data->actual_y + *scrollbar.scroll + scrollbar_data->actual_h <
-				content_panel->actual_y + content_panel->actual_h - SCROLLBAR_SIZE - 1)
-			{
-				*scrollbar.scroll += 1;
-			}
-		}
-
-		scrollbar_data->actual_y += *scrollbar.scroll;
-		wz_widget_add_offset(content_panel->handle, 0, -1 * *scrollbar.scroll);
+		wz->cached_rects[i].x = wz->widgets[i].actual_x;
+		wz->cached_rects[i].y = wz->widgets[i].actual_y;
+		wz->cached_rects[i].w = wz->widgets[i].actual_w;
+		wz->cached_rects[i].h = wz->widgets[i].actual_h;
 	}
 
 	// Run widgets
@@ -4111,6 +4213,7 @@ void wz_end()
 	}
 
 	wz_draw(wz->boxes_indices);
+	wz_dl_clear_clip(&wz->draw_list);
 
 	wz_clean();
 }
@@ -4209,6 +4312,30 @@ WzWidget wz_toggle_icon_raw(WzWidget parent, bool* result, WzTexture texture,
 
 
 
+// Vector-drawn X toggle button — claude 2026-03-24
+WzWidget wz_toggle_x_raw(WzWidget parent, bool* result,
+	const char* file, unsigned int line)
+{
+	WzWidget icon = wz_widget_raw(parent, __FILE__, __LINE__);
+	wz_widget_set_size(icon, 16, 16);
+	wz_widget_add_source(icon, file, line);
+	wz_widget_set_border(icon, WZ_BORDER_RAISED);
+	wz_widget_set_font_color(icon, 0x000000FF);
+
+	if (wz_widget_is_deactivating(icon))
+		*result = !*result;
+
+	if (wz_widget_is_active(icon) || wz_widget_is_activating(icon))
+		wz_widget_set_border(icon, WZ_BORDER_SUNKEN);
+
+	WzWidgetItem item = { 0 };
+	item.type = ItemType_CloseIcon;
+	wz_widget_add_item(icon, item);
+
+	return icon;
+}
+#define wz_toggle_x(parent, result) wz_toggle_x_raw(parent, result, __FILE__, __LINE__)
+
 WzWidget wz_command_toggle_raw(WzWidget parent, WzStr str, bool* active,
 	unsigned user_id, const char* file_name, unsigned int line)
 {
@@ -4301,7 +4428,6 @@ WzWidget wz_label_raw(WzWidget handle, WzStr str, const char* file, unsigned int
 {
 	float w = 0, h = 0;
 	wz_get_text_size(str.str, 0, strlen(str.str), 0, &w, &h);
-
 
 	WzWidget parent = wz_widget_raw(handle, file, line);
 	wz_widget_set_size(parent, (int)w, (int)h);
@@ -4424,48 +4550,71 @@ WzWidget wz_dialog_raw(int* x, int* y, unsigned* w, unsigned* h,
 	bool* active, WzStr name_str, int z,
 	WzWidget parent, const char* file, unsigned int line)
 {
-
-	*active = true;
-
 	WzWidget window = wz_vbox(parent);
 	wz_widget_set_free_from_parent(window);
-	wz_widget_set_size(window, *w, *h);
 	wz_widget_set_z(window, z);
 	wz_widget_add_source(window, file, line);
-	wz_widget_set_cross_axis_alignment(window, WZ_CROSS_AXIS_ALIGNMENT_STRETCH);
+	wz_widget_set_border(window, WZ_BORDER_RAISED);
+	wz_widget_set_ignore_children_min(window);
 
 #if 1
 	WzWidget bar = wz_hbox(window);
-	wz_widget_set_color(bar, 0x000080FF);
+	// Win98 title bar: navy blue → medium blue gradient — claude 2026-03-25
+	wz_widget_set_gradient(bar, 0x000080FF, 0x3A6EA5FF);
 	wz_widget_add_source(bar, file, line);
 	wz_widget_set_border(bar, WZ_BORDER_NONE);
-	wz_widget_set_margin_left(bar, 5);
-	wz_widget_set_cross_axis_alignment(bar, WZ_CROSS_AXIS_ALIGNMENT_CENTER);
+	wz_widget_set_pad_left(bar, 5);
+	wz_widget_fill_cross_axis(bar);
+	wz_widget_align(bar, WZ_ALIGNMENT_CENTER);
 
 	WzWidget name = wz_label(bar, name_str);
 	wz_widget_set_font_color(name, 0xffffffff);
 	wz_widget_set_color(name, 0);
+	wz_widget_set_text_alignment(name, WZ_TEXT_ALIGNMENT_CENTER);
 
 	wz_spacer(bar);
-	WzWidget quit_button = wz_button_icon(bar, active, wz->x_icon);
+
+	WzWidget quit_button = wz_toggle_x(bar, active); // claude 2026-03-24
 
 	if (wz_widget_is_interacting_tree(bar) && !wz_widget_is_interacting(quit_button))
 	{
-		*x += wz->mouse_pos.x - wz->previous_mouse_pos.x;
-		*y += wz->mouse_pos.y - wz->previous_mouse_pos.y;
+		*x += wz->mouse_delta.x;
+		*y += wz->mouse_delta.y;
 	}
 
 	wz_widget_set_pos(window, *x, *y);
+#endif
 
 	WzWidget user_section = wz_vbox(window);
 	wz_widget_set_border(user_section, WZ_BORDER_NONE);
 	wz_widget_set_flex(user_section);
+	wz_widget_fill_cross_axis(user_section);
+	wz_widget_set_color(user_section, WZ_RED);
+
+	// Resize grip 
+	{
+		WzWidget grip_row = wz_hbox(window);
+		wz_widget_set_border(grip_row, WZ_BORDER_NONE);
+		wz_widget_set_main_axis_size_min(grip_row);
+		wz_widget_fill_cross_axis(grip_row);
+		wz_spacer(grip_row);
+		WzWidget grip = wz_widget(grip_row);
+		wz_widget_set_size(grip, 16, 16);
+		wz_widget_set_border(grip, WZ_BORDER_RESIZE_GRIP); // TODO: WHAT?!!!!
+		wz_widget_set_color(grip, WZ_DEFAULT_COLOR);
+
+		//wz_widget_get_cached_size(window, w, h);
+
+		if (wz_widget_is_interacting(grip))
+		{
+			*w += wz->mouse_delta.x;
+			*h += wz->mouse_delta.y;
+		}
+
+		wz_widget_set_size(window, *w, *h);
+	}
 
 	return user_section;
-#else
-	return window;
-#endif
-
 }
 
 
@@ -4534,6 +4683,8 @@ void wz_widget_set_w(WzWidget c, unsigned int w)
 	WzChunk* chunk = &wz->chunks[data->chunk];
 	chunk->min_width[data->slot] = w;
 }
+
+
 
 WzWidget wz_dropdown(WzWidget parent,
 	const WzStr* texts, int texts_count, int* selected_text, bool* active,
@@ -4612,7 +4763,7 @@ WzWidget wz_vpanel_raw(WzWidget parent, const char* file, unsigned int line)
 	wz_widget_set_margins(widget, 5);
 	wz_widget_set_child_gap(widget, 5);
 	wz_widget_set_border(widget, WZ_BORDER_RAISED);
-	wz_widget_set_cross_axis_alignment(widget, WZ_CROSS_AXIS_ALIGNMENT_CENTER);
+	wz_widget_align(widget, WZ_ALIGNMENT_CENTER);
 	wz_widget_set_color_old(widget, WZ_LIGHTGRAY);
 
 	return widget;
@@ -4624,7 +4775,7 @@ WzWidget wz_hpanel_raw(WzWidget parent, const char* file, unsigned int line)
 	wz_widget_set_margins(widget, 5);
 	wz_widget_set_child_gap(widget, 5);
 	wz_widget_set_border(widget, WZ_BORDER_RAISED);
-	wz_widget_set_cross_axis_alignment(widget, WZ_CROSS_AXIS_ALIGNMENT_CENTER);
+	wz_widget_align(widget, WZ_ALIGNMENT_CENTER);
 	wz_widget_set_color_old(widget, WZ_LIGHTGRAY);
 
 	return widget;
@@ -4634,7 +4785,7 @@ WzWidget wz_panel_raw(WzWidget parent, const char* file, unsigned int line)
 {
 	WzWidget widget = wz_widget_raw(parent, file, line);
 	wz_widget_set_border(widget, WZ_BORDER_RAISED);
-	wz_widget_set_cross_axis_alignment(widget, WZ_CROSS_AXIS_ALIGNMENT_CENTER);
+	wz_widget_align(widget, WZ_ALIGNMENT_CENTER);
 	wz_widget_set_color_old(widget, WZ_LIGHTGRAY);
 
 	return widget;
@@ -4646,7 +4797,6 @@ void wz_label_list_sorted_raw(WzStr* item_names, unsigned int count, unsigned* i
 {
 	// WHAT IS THIS
 	WzWidget widgets[MAX_NUM_LABELS] = { 0 };
-
 
 	wzrd_label_list_raw(parent, item_names, count, items, unique_ids, width, height,
 		color, widgets, selected, is_selected, file_name, line);
@@ -5063,12 +5213,13 @@ void wz_widget_set_size(WzWidget c, unsigned int w, unsigned int h)
 	WzWidgetData* data = wz_widget_get(c);
 	data->min_h = data->constraint_max_h = h;
 	data->min_w = data->constraint_max_w = w;
-
+	
 	// TODO: Handle max size too
 	WzChunk* chunk = &wz->chunks[data->chunk];
 	chunk->min_width[data->slot] = w;
 	chunk->min_height[data->slot] = h;
 }
+
 
 // define the functions we need
 void layout_func(StbTexteditRow* row, STB_TEXTEDIT_STRING* str, int start_i)

@@ -1,0 +1,8 @@
+SUMMARY
+Software Developer, earned 1 year of hands-on industry experience, with a strong academic foundation.
+Earned a B.Sc. in Computer Science from the Open University of Israel, and currently studying for M.Sc.
+Proficient in C/C++. Experienced in AI Spec Driven Development, leveraging Claude Code and Multi-Agent
+Workflow. Industry experience in Linux driver programming. Skilled in 3D graphics. Contributing to the
+community with Open Source code. Self-motivated, an autodidact, seeking the next opportunity to grow as a
+Software Engineer
+

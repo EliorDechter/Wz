@@ -455,6 +455,45 @@ static void init_gpu_resources(void)
     ctx.white_tex_id = white_tex.id;
 }
 
+// ---- Load text file from virtual FS (works on web and native) — claude 2026-03-25 ----
+static char* load_text_file(const char* path)
+{
+    FILE* f = fopen(path, "r");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    rewind(f);
+    char* buf = malloc(len + 1);
+    if (!buf) { fclose(f); return NULL; }
+    fread(buf, 1, len, f);
+    buf[len] = '\0';
+    fclose(f);
+    return buf;
+}
+
+// Split buf in-place on newlines, fill lines[], return line count — claude 2026-03-25
+static int split_lines(char* buf, char** lines, int max_lines)
+{
+    int count = 0;
+    char* p = buf;
+    while (*p && count < max_lines)
+    {
+        lines[count++] = p;
+        char* nl = strchr(p, '\n');
+        if (!nl) break;
+        *nl = '\0';
+        p = nl + 1;
+    }
+    return count;
+}
+
+// Returns web path on EMSCRIPTEN, absolute Windows path otherwise — claude 2026-03-25
+#ifdef __EMSCRIPTEN__
+#define DATA_PATH(name) "/data/" name
+#else
+#define DATA_PATH(name) "C:\\Users\\Elior\\source\\repos\\AdventureWizard\\web\\data\\" name
+#endif
+
 // ---- Load fonts and upload atlas ----
 static void load_fonts(void)
 {
@@ -480,8 +519,8 @@ static void load_fonts(void)
     size_t file_size;
     unsigned char* data = load_file_data(font_regular, &file_size);
     if (data) {
-        wz_font_load(0, data, (unsigned)file_size, 18.0f * font_dpr);
-        wz_font_load(1, data, (unsigned)file_size, 28.0f * font_dpr);
+        wz_font_load(0, data, (unsigned)file_size, 22.0f * font_dpr);
+        wz_font_load(1, data, (unsigned)file_size, 32.0f * font_dpr);
         free(data);
     }
 
@@ -512,6 +551,7 @@ static void load_fonts(void)
 
     // Pack icons into atlas before upload
     wz_create_dropdown_icon();
+    wz_create_close_icon(); // claude 2026-03-24
     wz_pack_icons_into_atlas();
 
     // Upload each font atlas to GPU
@@ -614,14 +654,135 @@ static void do_frame(float* avg_total, float* avg_gui, float* avg_layout, float*
     wz_begin((unsigned)GetScreenWidth(), (unsigned)GetScreenHeight(),
              events, (unsigned)events_count, true);
 #endif
-    {
-        WzWidget root = (WzWidget){ 0 };
-        WzWidget vbox = wz_vbox_id(root, WIDGET_VBOX1);
+    WzWidget root = (WzWidget){ 0 };
+    WzWidget screen = wz_widget(root);
+    wz_widget_set_layout(screen, WZ_LAYOUT_NONE);
 
-        WzStr strs[] = { wz_str_create("wow1"), wz_str_create("wow2"), wz_str_create("wow3") };
-        s_dd_widget = wz_dropdown(vbox, strs, 3, &s_selected_text, &s_active, WIDGET_DROPDOWN1);
-        wz_label_id(vbox, wz_str_create("euaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), WIDGET_LABEL1);
+    // Summary dialog — claude 2026-03-25
+    {
+        static int    sx = 10, sy = 10;
+        static unsigned sw = 500, sh = 300;
+        static bool   s_active = true;
+        if (s_active)
+        {
+            WzWidget dlg = wz_dialog(&sx, &sy, &sw, &sh, &s_active, wz_str_create("Summary"), 0, screen);
+            static unsigned       s_scroll;
+            static WzScrollPhysics s_phys;
+            WzWidget sb = wz_scroll_box((wzrd_v2){0, 0}, &s_scroll, &s_phys, dlg, 0);
+
+            static char*  s_buf        = NULL;
+            static char*  s_lines[256];
+            static int    s_line_count = 0;
+            if (!s_buf)
+            {
+                s_buf = load_text_file(DATA_PATH("summary.txt"));
+                if (s_buf) s_line_count = split_lines(s_buf, s_lines, 256);
+            }
+            for (int li = 0; li < s_line_count; li++)
+                wz_label(sb, wz_str_create(s_lines[li]));
+        }
     }
+
+    // Education dialog — claude 2026-03-25
+    {
+        static int    ex = 10, ey = 320;
+        static unsigned ew = 500, eh = 180;
+        static bool   e_active = true;
+        if (e_active)
+        {
+            WzWidget dlg = wz_dialog(&ex, &ey, &ew, &eh, &e_active, wz_str_create("Education"), 0, screen);
+            static unsigned       e_scroll;
+            static WzScrollPhysics e_phys;
+            WzWidget sb = wz_scroll_box((wzrd_v2){0, 0}, &e_scroll, &e_phys, dlg, 0);
+
+            static char*  e_buf        = NULL;
+            static char*  e_lines[64];
+            static int    e_line_count = 0;
+            if (!e_buf)
+            {
+                e_buf = load_text_file(DATA_PATH("education.txt"));
+                if (e_buf) e_line_count = split_lines(e_buf, e_lines, 64);
+            }
+            for (int li = 0; li < e_line_count; li++)
+                wz_label(sb, wz_str_create(e_lines[li]));
+        }
+    }
+
+    // Work Experience dialog — claude 2026-03-25
+    {
+        static int    wx = 520, wy = 10;
+        static unsigned ww = 600, wh = 500;
+        static bool   w_active = true;
+        if (w_active)
+        {
+            WzWidget dlg = wz_dialog(&wx, &wy, &ww, &wh, &w_active, wz_str_create("Work Experience"), 0, screen);
+            static unsigned       w_scroll;
+            static WzScrollPhysics w_phys;
+            WzWidget sb = wz_scroll_box((wzrd_v2){0, 0}, &w_scroll, &w_phys, dlg, 0);
+
+            static char*  w_buf        = NULL;
+            static char*  w_lines[128];
+            static int    w_line_count = 0;
+            if (!w_buf)
+            {
+                w_buf = load_text_file(DATA_PATH("work_experience.txt"));
+                if (w_buf) w_line_count = split_lines(w_buf, w_lines, 128);
+            }
+            for (int li = 0; li < w_line_count; li++)
+                wz_label(sb, wz_str_create(w_lines[li]));
+        }
+    }
+
+    // Projects dialog — claude 2026-03-25
+    {
+        static int    px = 1130, py = 10;
+        static unsigned pw = 520, ph = 280;
+        static bool   p_active = true;
+        if (p_active)
+        {
+            WzWidget dlg = wz_dialog(&px, &py, &pw, &ph, &p_active, wz_str_create("Projects"), 0, screen);
+            static unsigned       p_scroll;
+            static WzScrollPhysics p_phys;
+            WzWidget sb = wz_scroll_box((wzrd_v2){0, 0}, &p_scroll, &p_phys, dlg, 0);
+
+            static char*  p_buf        = NULL;
+            static char*  p_lines[64];
+            static int    p_line_count = 0;
+            if (!p_buf)
+            {
+                p_buf = load_text_file(DATA_PATH("projects.txt"));
+                if (p_buf) p_line_count = split_lines(p_buf, p_lines, 64);
+            }
+            for (int li = 0; li < p_line_count; li++)
+                wz_label(sb, wz_str_create(p_lines[li]));
+        }
+    }
+
+    // Skills dialog — claude 2026-03-25
+    {
+        static int    sk_x = 1130, sk_y = 300;
+        static unsigned sk_w = 520, sk_h = 220;
+        static bool   sk_active = true;
+        if (sk_active)
+        {
+            WzWidget dlg = wz_dialog(&sk_x, &sk_y, &sk_w, &sk_h, &sk_active, wz_str_create("Software Skills"), 0, screen);
+            static unsigned       sk_scroll;
+            static WzScrollPhysics sk_phys;
+            WzWidget sb = wz_scroll_box((wzrd_v2){0, 0}, &sk_scroll, &sk_phys, dlg, 0);
+
+            static char*  sk_buf        = NULL;
+            static char*  sk_lines[64];
+            static int    sk_line_count = 0;
+            if (!sk_buf)
+            {
+                sk_buf = load_text_file(DATA_PATH("skills.txt"));
+                if (sk_buf) sk_line_count = split_lines(sk_buf, sk_lines, 64);
+            }
+            for (int li = 0; li < sk_line_count; li++)
+                wz_label(sb, wz_str_create(sk_lines[li]));
+        }
+    }
+
     *avg_gui = perf_avg(smp_gui, idx_gui, (float)((GetTime() - t_gui) * 1000.0));
 
     double t_layout = GetTime();

@@ -44,14 +44,14 @@
 #define GAP_WIDTH 24
 #define GAP_HEIGHT 24
 
-#define MAX_NUM_WIDGETS 32
+#define MAX_NUM_WIDGETS 1024
 
 #define MAX_NUM_ITEMS 128
 #define MAX_NUM_CHILDREN 256
 
 #define DEBUG_PANELS 0
 
-#define MAX_NUM_DRAW_COMMANDS 1024
+#define MAX_NUM_DRAW_COMMANDS 8192
 
 #define MAX_NUM_SOURCES 8
 
@@ -245,6 +245,11 @@ typedef struct wzrd_v2f {
 	float x, y;
 } wzrd_v2f;
 
+typedef struct WzScrollPhysics {
+	float position; // current scroll position (pixels)
+	float velocity; // current velocity (pixels/frame)
+} WzScrollPhysics;
+
 typedef enum WzBorderStyle
 {
 	WZ_BORDER_NONE,
@@ -254,6 +259,7 @@ typedef enum WzBorderStyle
 	WZ_BORDER_BOTTOM_LINE,  // bottom edge only
 	WZ_BORDER_LEFT_LINE,    // left edge only
 	WZ_BORDER_TAB,          // tab open-bottom geometry
+	WZ_BORDER_RESIZE_GRIP,  // diagonal lines in bottom-right corner
 } WzBorderStyle;
 
 typedef struct wzrd_texture {
@@ -307,6 +313,7 @@ typedef enum ItemType {
 	ItemType_RightHorizontalDottedLine,
 	ItemType_Line,
 	ItemType_IconClose,
+	ItemType_ScrollGrip, // 3 horizontal groove lines centered on thumb — claude 2026-03-25
 } ItemType;
 
 typedef struct Line {
@@ -539,12 +546,13 @@ typedef struct
 	int child_gap;
 	bool fit_h, fit_w;
 	bool best_fit;
-	unsigned int cross_axis_alignment;
+	unsigned int fill_cross_axis;
 	unsigned int main_axis_alignment;
 
 	unsigned int font_color;
 	unsigned font_id;
 	unsigned int color;
+	unsigned int gradient_color; // right-side color for horizontal gradient; 0 = no gradient — claude 2026-03-25
 	unsigned int b0, b1, b2, b3;
 	WzBorderStyle border_style;
 	WzBorderStyle window_border_style;
@@ -560,6 +568,7 @@ typedef struct
 
 	bool free_from_parent;
 	bool cull;
+	bool clips_children;
 
 	bool ignore_unique_id;
 
@@ -744,13 +753,13 @@ typedef struct WzChunk
 	uint16_t margin_bottom[WZ_CHUNK_SIZE];
 	uint16_t max_width[WZ_CHUNK_SIZE];
 	uint16_t max_height[WZ_CHUNK_SIZE];
-	uint16_t cross_align[WZ_CHUNK_SIZE];
+	uint16_t fill_cross_axis[WZ_CHUNK_SIZE];
 	uint16_t available_width[WZ_CHUNK_SIZE];
 	uint16_t available_height[WZ_CHUNK_SIZE];
 	uint32_t color[WZ_CHUNK_SIZE];
 
-	uint16_t absolute_x[WZ_CHUNK_SIZE];
-	uint16_t absolute_y[WZ_CHUNK_SIZE];
+	int16_t absolute_x[WZ_CHUNK_SIZE];
+	int16_t absolute_y[WZ_CHUNK_SIZE];
 	uint16_t absolute_w[WZ_CHUNK_SIZE];
 	uint16_t absolute_h[WZ_CHUNK_SIZE];
 
@@ -758,6 +767,7 @@ typedef struct WzChunk
 	uint16_t relative_y[WZ_CHUNK_SIZE];
 
 	uint16_t widget_index[WZ_CHUNK_SIZE];
+	uint8_t ignore_children_min[WZ_CHUNK_SIZE];
 
 	uint16_t count;
 } WzChunk;
@@ -769,7 +779,6 @@ typedef struct WzChunkLayout
 	//uint16_t border_left, border_right, border_top, border_bottom;
 	uint8_t border_size;
 	uint8_t child_gap;
-	uint16_t min_width, min_height;
 	uint8_t flex_total;
 	uint16_t inner_width, inner_height;
 	uint16_t cursor_x, cursor_y;
@@ -781,6 +790,7 @@ typedef struct WzChunkLayout
 	uint16_t total_children_min_width, total_children_min_height;
 	uint16_t w_per_flex_cache, h_per_flex_cache;
 	uint8_t total_child_count;
+	uint8_t alignment;
 
 	//int32_t  is_continuation;
 	//int32_t  overflow_group_head;
@@ -788,6 +798,7 @@ typedef struct WzChunkLayout
 	uint16_t chunk_stride;
 
 	int16_t available_width, available_height;
+	uint16_t children_w, children_h;
 
 } WzChunkLayout;
 
@@ -880,6 +891,8 @@ typedef struct WzGui
 	unsigned char* dropdown_icon_bitmap;  // white+alpha, to be uploaded by platform
 	int dropdown_icon_w, dropdown_icon_h;
 	WzTexture dropdown_icon_texture;
+	unsigned char* close_icon_bitmap;     // X icon, oversampled then downsampled — claude 2026-03-24
+	int close_icon_w, close_icon_h;
 
 	// Icon regions packed into font 0 atlas (UV coords in pixels)
 	float dropdown_atlas_x, dropdown_atlas_y; // top-left pixel in atlas
@@ -891,6 +904,8 @@ typedef struct WzGui
 
 	WzChunkLayout layouts[MAX_NUM_WIDGETS];
 	unsigned layouts_count;
+
+	WzRect cached_rects[MAX_NUM_WIDGETS];
 
 } WzGui;
 
@@ -946,10 +961,9 @@ typedef struct WzlRect
 
 enum
 {
-	CROSS_AXIS_ALIGNMENT_START,
-	WZ_CROSS_AXIS_ALIGNMENT_END,
-	WZ_CROSS_AXIS_ALIGNMENT_CENTER,
-	WZ_CROSS_AXIS_ALIGNMENT_STRETCH,
+	WZ_ALIGNMENT_START,
+	WZ_ALIGNMENT_CENTER,
+	WZ_ALIGNMENT_END,
 	CROSS_AXIS_ALIGNMENT_BASELINE,
 	CROSS_AXIS_ALIGNMENT_TOTAL,
 };
@@ -1032,6 +1046,7 @@ void wz_font_load(unsigned font_id, const unsigned char* ttf_data, unsigned ttf_
 void wz_font_set_atlas_texture(unsigned font_id, WzTexture texture);
 void wz_get_text_size(const char* str, unsigned start, unsigned end, unsigned font_id, float* out_w, float* out_h);
 void wz_create_dropdown_icon(void);
+void wz_create_close_icon(void); // claude 2026-03-24
 void wz_set_dropdown_icon_texture(WzTexture texture);
 void wz_pack_icons_into_atlas(void);
 
@@ -1110,6 +1125,7 @@ WzWidget wz_widget_persistent(WzWidget parent, WzWidgetData widget_data);
 WzWidgetData wzrd_widget_get_cached_box(const char* tag);
 void wz_widget_add_tag(WzWidget widget, const void* str);
 void wz_widget_clip(WzWidget handle);
+void wz_widget_set_clip(WzWidget widget);
 bool wz_widget_is_deactivating(WzWidget handle);
 bool wz_widget_is_active(WzWidget handle);
 bool wz_widget_is_interacting(WzWidget handle);
@@ -1143,6 +1159,7 @@ void wz_widget_set_size(WzWidget c, unsigned int w, unsigned int h);
 void wz_widget_set_free_from_parent(WzWidget w);
 void wz_widget_set_free_from_parent_vertically(WzWidget w);
 void wz_widget_set_color(WzWidget widget, unsigned int color);
+void wz_widget_set_gradient(WzWidget widget, unsigned int left_color, unsigned int right_color); // horizontal gradient — claude 2026-03-25
 void wz_widget_set_cross_axis_alignment(WzWidget widget, unsigned int cross_axis_alignment);
 void wz_widget_set_main_axis_alignment(WzWidget widget, unsigned int cross_axis_alignment);
 void wz_widget_ignore_unique_id(WzWidget widget);
@@ -1204,7 +1221,7 @@ WzWidget wz_widget_add_to_frame(WzWidget parent, WzWidgetData widget);
 void wz_zoom(float x);
 void wz_transform_x(unsigned x);
 void wz_add_resize_widgets_maintain_aspect_ratio(WzWidget parent, float* scale_x, float* scale_y, float* transform_x, float* transform_y);
-WzWidget wz_scroll_box(wzrd_v2 size, unsigned int* scroll, WzWidget parent, const void* tag);
+WzWidget wz_scroll_box(wzrd_v2 size, unsigned int* scroll, WzScrollPhysics* physics, WzWidget parent, const void* tag);
 void wz_add_persistent_widget(WzWidgetData widget);
 void wz_widget_disable(WzWidget widget, bool disable);
 void wz_add_resize_widgets_maintain_aspect_ratio2(WzWidget parent, float* angle);
